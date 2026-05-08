@@ -1,6 +1,6 @@
 """
-train.py — XGBoost with cabin parsing, GroupId, and explicit missingness flags.
-Iteration 21: Revert to max_depth=6, n_estimators=100, learning_rate=0.1 (iter 2 config) to confirm 0.8143 baseline.
+train.py — XGBoost with cabin parsing, GroupId, missingness flags, and HighSpender tier.
+Iteration 22: Add HighSpender (top quartile of total spending) to test spending-level segmentation.
 """
 import sys, pathlib
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent))
@@ -53,6 +53,11 @@ def build_predict_fn():
     for col in SPENDING:
         train_df[col] = train_df[col].fillna(0)
     
+    # Create HighSpender feature: 1 if total spending is in top quartile
+    total_spending = train_df[SPENDING].sum(axis=1)
+    spending_q3 = total_spending.quantile(0.75)
+    train_df["HighSpender"] = (total_spending >= spending_q3).astype(int)
+    
     # Create explicit missingness flags for CryoSleep and VIP before filling
     train_df["CryoSleep_Missing"] = train_df["CryoSleep"].isna().astype(int)
     train_df["VIP_Missing"] = train_df["VIP"].isna().astype(int)
@@ -61,11 +66,11 @@ def build_predict_fn():
     train_df["CryoSleep"] = train_df["CryoSleep"].fillna("Unknown").astype(str)
     train_df["VIP"] = train_df["VIP"].fillna("Unknown").astype(str)
     
-    # Build feature set: core features + cabin parsing + missingness flags
+    # Build feature set: core features + cabin parsing + missingness flags + HighSpender
     feature_cols = (
         ["Age"] + SPENDING + CATEGORICAL + 
         ["Deck", "RoomNum", "Side", "GroupId"] + 
-        ["CryoSleep_Missing", "VIP_Missing"]
+        ["CryoSleep_Missing", "VIP_Missing", "HighSpender"]
     )
     X = train_df[feature_cols]
     y = train_df["Transported"].astype(int)
@@ -82,7 +87,7 @@ def build_predict_fn():
     ])
     
     preprocessor = ColumnTransformer([
-        ("num", numeric_transformer, ["Age", "RoomNum", "CryoSleep_Missing", "VIP_Missing"] + SPENDING),
+        ("num", numeric_transformer, ["Age", "RoomNum", "CryoSleep_Missing", "VIP_Missing", "HighSpender"] + SPENDING),
         ("cat", categorical_transformer, CATEGORICAL + ["Deck", "Side", "GroupId"]),
     ])
     
@@ -107,6 +112,10 @@ def build_predict_fn():
         # Fill missing spending with 0
         for col in SPENDING:
             X_val_copy[col] = X_val_copy[col].fillna(0)
+        
+        # Create HighSpender feature using same threshold as training
+        total_spending = X_val_copy[SPENDING].sum(axis=1)
+        X_val_copy["HighSpender"] = (total_spending >= spending_q3).astype(int)
         
         # Create explicit missingness flags for CryoSleep and VIP before filling
         X_val_copy["CryoSleep_Missing"] = X_val_copy["CryoSleep"].isna().astype(int)
