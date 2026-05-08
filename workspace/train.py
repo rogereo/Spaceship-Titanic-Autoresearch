@@ -1,6 +1,7 @@
 """
-train.py — Iteration 42: Debug and restore XGBoost with cabin parsing.
-Verifying feature consistency between fit and predict to diagnose 0.7234 regression.
+train.py — Iteration 43: Smart spending imputation by group.
+Test whether imputing spending with median per HomePlanet (instead of 0) 
+plus a "spending_recorded" flag improves accuracy beyond 0.8189.
 """
 import sys, pathlib
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent))
@@ -41,9 +42,20 @@ def engineer_features(df):
     """Engineer spending and spending-cryo interaction features."""
     df_copy = df.copy()
     
-    # Fill missing spending with 0
+    # Track which spending values were originally recorded (not missing)
+    spending_recorded = ~df_copy[SPENDING].isna().any(axis=1)
+    df_copy["Spending_Recorded"] = spending_recorded.astype(int)
+    
+    # Fill missing spending with median per HomePlanet group
     for col in SPENDING:
-        df_copy[col] = df_copy[col].fillna(0)
+        missing_mask = df_copy[col].isna()
+        if missing_mask.any():
+            # Compute median per HomePlanet (ignoring NaN within groups)
+            group_medians = df_copy.groupby("HomePlanet")[col].median()
+            # Fill group-wise; any remaining NaN (if whole planet has no data) use global median
+            df_copy.loc[missing_mask, col] = df_copy.loc[missing_mask, "HomePlanet"].map(group_medians)
+            global_median = df_copy[col].median()
+            df_copy[col].fillna(global_median, inplace=True)
     
     # Total spending
     df_copy["TotalSpending"] = df_copy[SPENDING].sum(axis=1)
@@ -70,7 +82,7 @@ def build_predict_fn():
     # Extract group ID from PassengerId
     train_df["GroupId"] = train_df["PassengerId"].apply(extract_group_id)
     
-    # Engineer features
+    # Engineer features (including smart spending imputation)
     train_df = engineer_features(train_df)
     
     # Create explicit missingness flags for CryoSleep and VIP before filling
@@ -83,7 +95,7 @@ def build_predict_fn():
     
     # Build feature set
     feature_cols = (
-        ["Age"] + SPENDING + ["TotalSpending", "CryoSleep_LogSpending"] +
+        ["Age"] + SPENDING + ["TotalSpending", "CryoSleep_LogSpending", "Spending_Recorded"] +
         CATEGORICAL + 
         ["Deck", "RoomNum", "Side", "GroupId"] + 
         ["CryoSleep_Missing", "VIP_Missing"]
@@ -103,7 +115,7 @@ def build_predict_fn():
     ])
     
     numeric_feature_cols = (
-        ["Age", "RoomNum", "CryoSleep_Missing", "VIP_Missing"] + 
+        ["Age", "RoomNum", "CryoSleep_Missing", "VIP_Missing", "Spending_Recorded"] + 
         SPENDING + ["TotalSpending", "CryoSleep_LogSpending"]
     )
     categorical_feature_cols = CATEGORICAL + ["Deck", "Side", "GroupId"]
@@ -131,7 +143,7 @@ def build_predict_fn():
         # Extract group ID
         X_val_copy["GroupId"] = X_val_copy["PassengerId"].apply(extract_group_id)
         
-        # Engineer features
+        # Engineer features (using same smart spending imputation)
         X_val_copy = engineer_features(X_val_copy)
         
         # Create explicit missingness flags for CryoSleep and VIP before filling
