@@ -1,8 +1,7 @@
 """
-train.py — Iteration 52: Restore XGBoost iteration 1 baseline.
-Confirm that original hyperparameters (n_estimators=100, max_depth=6, learning_rate=0.1)
-with iteration 1 feature engineering reproduce the 0.8229 validation accuracy.
-Logistic regression regressed to 0.7930, confirming XGBoost capacity is needed.
+train.py — Iteration 53: Add group-level aggregate features.
+Extract group size and group median spending from PassengerId groups.
+Test whether group dynamics (size, collective spending) improve beyond 0.8229 baseline.
 """
 import sys, pathlib
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent))
@@ -72,6 +71,24 @@ def engineer_features(df):
     return df_copy
 
 
+def add_group_features(df):
+    """Add group-level aggregate features based on PassengerId group."""
+    df_copy = df.copy()
+    
+    # Extract group ID
+    df_copy["GroupId"] = df_copy["PassengerId"].apply(extract_group_id)
+    
+    # Compute group size
+    group_sizes = df_copy.groupby("GroupId").size()
+    df_copy["GroupSize"] = df_copy["GroupId"].map(group_sizes)
+    
+    # Compute group median total spending
+    group_median_spending = df_copy.groupby("GroupId")["TotalSpending"].median()
+    df_copy["GroupMedianSpending"] = df_copy["GroupId"].map(group_median_spending)
+    
+    return df_copy
+
+
 def build_predict_fn():
     train_df, _ = prepare.load_split()
     
@@ -81,11 +98,11 @@ def build_predict_fn():
     train_df["RoomNum"] = cabin_data.apply(lambda x: x[1])
     train_df["Side"] = cabin_data.apply(lambda x: x[2])
     
-    # Extract group ID from PassengerId
-    train_df["GroupId"] = train_df["PassengerId"].apply(extract_group_id)
-    
     # Engineer features (including smart spending imputation)
     train_df = engineer_features(train_df)
+    
+    # Add group-level features
+    train_df = add_group_features(train_df)
     
     # Create explicit missingness flags for CryoSleep and VIP before filling
     train_df["CryoSleep_Missing"] = train_df["CryoSleep"].isna().astype(int)
@@ -100,7 +117,8 @@ def build_predict_fn():
         ["Age"] + SPENDING + ["TotalSpending", "CryoSleep_LogSpending", "Spending_Recorded"] +
         CATEGORICAL + 
         ["Deck", "RoomNum", "Side", "GroupId"] + 
-        ["CryoSleep_Missing", "VIP_Missing"]
+        ["CryoSleep_Missing", "VIP_Missing"] +
+        ["GroupSize", "GroupMedianSpending"]
     )
     X = train_df[feature_cols]
     y = train_df["Transported"].astype(int)
@@ -118,7 +136,8 @@ def build_predict_fn():
     
     numeric_feature_cols = (
         ["Age", "RoomNum", "CryoSleep_Missing", "VIP_Missing", "Spending_Recorded"] + 
-        SPENDING + ["TotalSpending", "CryoSleep_LogSpending"]
+        SPENDING + ["TotalSpending", "CryoSleep_LogSpending"] +
+        ["GroupSize", "GroupMedianSpending"]
     )
     categorical_feature_cols = CATEGORICAL + ["Deck", "Side", "GroupId"]
     
@@ -142,11 +161,17 @@ def build_predict_fn():
         X_val_copy["RoomNum"] = cabin_data.apply(lambda x: x[1])
         X_val_copy["Side"] = cabin_data.apply(lambda x: x[2])
         
-        # Extract group ID
-        X_val_copy["GroupId"] = X_val_copy["PassengerId"].apply(extract_group_id)
-        
         # Engineer features (using same smart spending imputation)
         X_val_copy = engineer_features(X_val_copy)
+        
+        # Add group-level features (computed from training group stats)
+        X_val_copy["GroupId"] = X_val_copy["PassengerId"].apply(extract_group_id)
+        X_val_copy["GroupSize"] = X_val_copy["GroupId"].map(pd.Series(
+            train_df.groupby("GroupId").size().to_dict()
+        ))
+        X_val_copy["GroupMedianSpending"] = X_val_copy["GroupId"].map(pd.Series(
+            train_df.groupby("GroupId")["TotalSpending"].median().to_dict()
+        ))
         
         # Create explicit missingness flags for CryoSleep and VIP before filling
         X_val_copy["CryoSleep_Missing"] = X_val_copy["CryoSleep"].isna().astype(int)
