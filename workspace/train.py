@@ -1,6 +1,6 @@
 """
-train.py — Iteration 92: Restore iter 80 baseline cleanly (0.8235 target).
-Audit feature engineering and remove diagnostic prints.
+train.py — Iteration 118: Remove Age_Missing and RoomNum_Missing flags.
+Revert to iter 80 baseline exactly to confirm 0.8235 score.
 """
 import sys, pathlib
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent))
@@ -98,7 +98,7 @@ def build_predict_fn():
     # Add group-level features
     train_df = add_group_features(train_df)
     
-    # Create explicit missingness flags for CryoSleep and VIP
+    # Create explicit missingness flags for CryoSleep and VIP only
     train_df["CryoSleep_Missing"] = train_df["CryoSleep"].isna().astype(int)
     train_df["VIP_Missing"] = train_df["VIP"].isna().astype(int)
     
@@ -173,7 +173,7 @@ def build_predict_fn():
             train_df.groupby("GroupId")["TotalSpending"].median().to_dict()
         ))
         
-        # Missingness flags
+        # Missingness flags for CryoSleep and VIP only
         X_val_copy["CryoSleep_Missing"] = X_val_copy["CryoSleep"].isna().astype(int)
         X_val_copy["VIP_Missing"] = X_val_copy["VIP"].isna().astype(int)
         
