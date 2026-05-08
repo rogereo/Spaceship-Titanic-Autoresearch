@@ -34,6 +34,8 @@ A logistic regression on the raw numeric columns (with simple imputation) achiev
 
 **Keep notes.** Maintain a file called `notes.md` in the working directory. After each iteration, append one line: what you tried, what you learned. Read it back at the start of each turn so you don't repeat yourself.
 
+**Refactor when the file grows.** Each turn you must rewrite the full contents of `train.py`, so the file's size directly costs output tokens. The harness shows you the current size and budget at the top of each prompt. If you are approaching the budget — or the file is becoming hard to reason about — make this turn a behavior-preserving refactor: extract helpers, remove dead code, consolidate duplicated transforms. A refactor that ties the current best score is fine; the ratchet keeps it. Only refactor when needed, not as filler.
+
 **Track your best.** Maintain `best.json` with the highest score you've achieved and the iteration that produced it. Update it only when you beat the current best.
 
 ## Hints (without solutions)
