@@ -1,6 +1,6 @@
 """
 train.py — logistic regression with cabin parsing, GroupId, and explicit missingness flags.
-With added data inspection to guide next iteration.
+Minimal feature set proven to achieve 0.7907 in iter 6.
 """
 import sys, pathlib
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent))
@@ -39,30 +39,6 @@ def extract_group_id(passenger_id):
 
 def build_predict_fn():
     train_df, _ = prepare.load_split()
-    
-    # === DATA INSPECTION ===
-    print("\n=== DATA INSPECTION ===")
-    print("\nMissing value counts:")
-    print(train_df.isnull().sum())
-    
-    print("\nTarget distribution:")
-    print(train_df["Transported"].value_counts())
-    
-    print("\nCorrelation of numeric columns with target:")
-    numeric_corr = train_df[NUMERIC + ["Transported"]].corr()["Transported"].drop("Transported").sort_values(ascending=False)
-    print(numeric_corr)
-    
-    print("\nCabin missing rate:", train_df["Cabin"].isnull().sum() / len(train_df))
-    print("CryoSleep missing rate:", train_df["CryoSleep"].isnull().sum() / len(train_df))
-    print("VIP missing rate:", train_df["VIP"].isnull().sum() / len(train_df))
-    
-    print("\nCryoSleep value counts (including NaN):")
-    print(train_df["CryoSleep"].value_counts(dropna=False))
-    
-    print("\nTransport rate by CryoSleep:")
-    print(train_df.groupby("CryoSleep", dropna=False)["Transported"].agg(["sum", "count", "mean"]))
-    
-    print("\n=== END INSPECTION ===\n")
     
     # Parse Cabin into Deck, RoomNum, Side
     cabin_data = train_df["Cabin"].apply(parse_cabin)
