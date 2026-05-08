@@ -1,5 +1,5 @@
 """
-train.py — feature engineering from Cabin and categorical columns.
+train.py — group structure from PassengerId, explicit zero imputation for spending.
 """
 import sys, pathlib
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent))
@@ -16,6 +16,7 @@ import prepare
 
 NUMERIC = ["Age", "RoomService", "FoodCourt", "ShoppingMall", "Spa", "VRDeck"]
 CATEGORICAL = ["HomePlanet", "Destination", "CryoSleep", "VIP"]
+SPENDING = ["RoomService", "FoodCourt", "ShoppingMall", "Spa", "VRDeck"]
 
 
 def parse_cabin(cabin_str):
@@ -28,6 +29,13 @@ def parse_cabin(cabin_str):
     return np.nan, np.nan, np.nan
 
 
+def extract_group_id(passenger_id):
+    """Extract group ID from PassengerId (e.g., '0001_01' -> '0001')."""
+    if pd.isna(passenger_id):
+        return np.nan
+    return str(passenger_id).split("_")[0]
+
+
 def build_predict_fn():
     train_df, _ = prepare.load_split()
     
@@ -37,12 +45,19 @@ def build_predict_fn():
     train_df["RoomNum"] = cabin_data.apply(lambda x: x[1])
     train_df["Side"] = cabin_data.apply(lambda x: x[2])
     
-    # Convert CryoSleep and VIP to numeric (they are object dtype)
-    train_df["CryoSleep"] = train_df["CryoSleep"].astype(str)
-    train_df["VIP"] = train_df["VIP"].astype(str)
+    # Extract group ID from PassengerId
+    train_df["GroupId"] = train_df["PassengerId"].apply(extract_group_id)
+    
+    # Fill missing values in spending columns with 0 (not used)
+    for col in SPENDING:
+        train_df[col] = train_df[col].fillna(0)
+    
+    # Convert CryoSleep and VIP to numeric (handle NaN explicitly)
+    train_df["CryoSleep"] = train_df["CryoSleep"].fillna("Unknown").astype(str)
+    train_df["VIP"] = train_df["VIP"].fillna("Unknown").astype(str)
     
     # Build feature set
-    X = train_df[NUMERIC + CATEGORICAL + ["Deck", "RoomNum", "Side"]]
+    X = train_df[["Age"] + SPENDING + CATEGORICAL + ["Deck", "RoomNum", "Side", "GroupId"]]
     y = train_df["Transported"].astype(int)
     
     # Define preprocessing for numeric and categorical columns
@@ -57,8 +72,9 @@ def build_predict_fn():
     ])
     
     preprocessor = ColumnTransformer([
-        ("num", numeric_transformer, NUMERIC + ["RoomNum"]),
-        ("cat", categorical_transformer, CATEGORICAL + ["Deck", "Side"]),
+        ("num", numeric_transformer, ["Age", "RoomNum"]),
+        ("cat", categorical_transformer, CATEGORICAL + ["Deck", "Side", "GroupId"]),
+        ("spending", numeric_transformer, SPENDING),
     ])
     
     pipe = Pipeline([
@@ -75,9 +91,19 @@ def build_predict_fn():
         X_val_copy["Deck"] = cabin_data.apply(lambda x: x[0])
         X_val_copy["RoomNum"] = cabin_data.apply(lambda x: x[1])
         X_val_copy["Side"] = cabin_data.apply(lambda x: x[2])
-        X_val_copy["CryoSleep"] = X_val_copy["CryoSleep"].astype(str)
-        X_val_copy["VIP"] = X_val_copy["VIP"].astype(str)
-        return pipe.predict(X_val_copy[NUMERIC + CATEGORICAL + ["Deck", "RoomNum", "Side"]]).astype(bool)
+        
+        # Extract group ID
+        X_val_copy["GroupId"] = X_val_copy["PassengerId"].apply(extract_group_id)
+        
+        # Fill missing spending with 0
+        for col in SPENDING:
+            X_val_copy[col] = X_val_copy[col].fillna(0)
+        
+        # Handle CryoSleep and VIP
+        X_val_copy["CryoSleep"] = X_val_copy["CryoSleep"].fillna("Unknown").astype(str)
+        X_val_copy["VIP"] = X_val_copy["VIP"].fillna("Unknown").astype(str)
+        
+        return pipe.predict(X_val_copy[["Age"] + SPENDING + CATEGORICAL + ["Deck", "RoomNum", "Side", "GroupId"]]).astype(bool)
     
     return predict
 
