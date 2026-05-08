@@ -1,7 +1,7 @@
 """
-train.py — XGBoost with cabin parsing, GroupId, and cryo-sleep/spending interaction.
-Iteration 33: Add feature importance diagnostics to understand which engineered features
-drive predictions. This will guide whether to simplify or continue engineering.
+train.py — XGBoost with cabin parsing, GroupId, and richer CryoSleep-spending interaction.
+Iteration 36: Replace binary CryoSleep_NoSpending with CryoSleep_Spending_Ratio to test
+whether the intensity of spending conditioned on cryo status improves prediction.
 """
 import sys, pathlib
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent))
@@ -39,7 +39,7 @@ def extract_group_id(passenger_id):
 
 
 def engineer_features(df):
-    """Engineer interaction and spending features."""
+    """Engineer spending and spending-cryo interaction features."""
     df_copy = df.copy()
     
     # Fill missing spending with 0
@@ -49,12 +49,14 @@ def engineer_features(df):
     # Total spending
     df_copy["TotalSpending"] = df_copy[SPENDING].sum(axis=1)
     
-    # Interaction: CryoSleep and zero spending
-    # If CryoSleep is missing, treat as False for this interaction
+    # Interaction: CryoSleep status and spending ratio
+    # For passengers in cryo-sleep, compute spending as a fraction; for others, set to 0.
+    # Use log-transformed spending to capture intensity better.
     cryo_status = df_copy["CryoSleep"].fillna(False)
-    df_copy["CryoSleep_NoSpending"] = (
-        (cryo_status == True) & (df_copy["TotalSpending"] == 0)
-    ).astype(int)
+    log_spending = np.log1p(df_copy["TotalSpending"])
+    df_copy["CryoSleep_LogSpending"] = (
+        (cryo_status == True) * log_spending
+    )
     
     return df_copy
 
@@ -84,7 +86,7 @@ def build_predict_fn():
     
     # Build feature set
     feature_cols = (
-        ["Age"] + SPENDING + ["TotalSpending", "CryoSleep_NoSpending"] +
+        ["Age"] + SPENDING + ["TotalSpending", "CryoSleep_LogSpending"] +
         CATEGORICAL + 
         ["Deck", "RoomNum", "Side", "GroupId"] + 
         ["CryoSleep_Missing", "VIP_Missing"]
@@ -105,7 +107,7 @@ def build_predict_fn():
     
     numeric_feature_cols = (
         ["Age", "RoomNum", "CryoSleep_Missing", "VIP_Missing"] + 
-        SPENDING + ["TotalSpending", "CryoSleep_NoSpending"]
+        SPENDING + ["TotalSpending", "CryoSleep_LogSpending"]
     )
     categorical_feature_cols = CATEGORICAL + ["Deck", "Side", "GroupId"]
     
@@ -120,26 +122,6 @@ def build_predict_fn():
     ])
     
     pipe.fit(X, y)
-    
-    # Print feature importance diagnostics
-    xgb_model = pipe.named_steps["clf"]
-    feature_names = (
-        numeric_feature_cols + 
-        list(pipe.named_steps["preprocessor"].named_transformers_["cat"].named_steps["onehot"].get_feature_names_out(categorical_feature_cols))
-    )
-    importances = xgb_model.feature_importances_
-    importance_df = pd.DataFrame({
-        "feature": feature_names,
-        "importance": importances
-    }).sort_values("importance", ascending=False)
-    
-    print("=== Top 15 Feature Importances ===", file=sys.stderr)
-    print(importance_df.head(15).to_string(index=False), file=sys.stderr)
-    
-    # Print correlations of key engineered features with target
-    print("\n=== Correlation of Key Features with Target ===", file=sys.stderr)
-    corr_df = train_df[["Age", "TotalSpending", "CryoSleep_NoSpending", "CryoSleep_Missing", "VIP_Missing", "RoomNum", "Transported"]].corr()["Transported"].sort_values(ascending=False)
-    print(corr_df.to_string(), file=sys.stderr)
     
     def predict(X_val):
         # Parse Cabin in validation set
