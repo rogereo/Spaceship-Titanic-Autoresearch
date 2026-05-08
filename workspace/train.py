@@ -1,7 +1,8 @@
 """
-train.py — Iteration 46: Fix pandas CoW chained assignment warnings.
-Replace inplace fillna with direct assignment to ensure spending imputation 
-actually modifies the dataframe. This should restore the 0.8229 baseline.
+train.py — Iteration 52: Restore XGBoost iteration 1 baseline.
+Confirm that original hyperparameters (n_estimators=100, max_depth=6, learning_rate=0.1)
+with iteration 1 feature engineering reproduce the 0.8229 validation accuracy.
+Logistic regression regressed to 0.7930, confirming XGBoost capacity is needed.
 """
 import sys, pathlib
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent))
