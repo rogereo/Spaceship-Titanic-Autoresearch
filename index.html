@@ -160,6 +160,23 @@ function computeRunningBest(records) {
   });
 }
 
+// Y-axis range that focuses on the meaningful score band.
+// Trims to the 2nd–98th percentile so a single crash at score=0 doesn't
+// flatten the chart, then pads by 15% of the visible range.
+function autoYRange(records) {
+  const scores = records
+    .map(r => r.score)
+    .filter(s => typeof s === "number");
+  if (!scores.length) return null;
+  const sorted = [...scores].sort((a, b) => a - b);
+  const n = sorted.length;
+  const lo = sorted[Math.floor(n * 0.02)];
+  const hi = sorted[Math.min(n - 1, Math.ceil(n * 0.98) - 1)];
+  const span = Math.max(hi - lo, 0.01);
+  const pad = Math.max(span * 0.15, 0.005);
+  return [Math.max(0, lo - pad), Math.min(1, hi + pad)];
+}
+
 function renderHeader(records, tracePath) {
   const meta = document.getElementById("meta");
   if (!records.length) {
@@ -212,10 +229,15 @@ function renderChart(records) {
     line: { color: "#1976d2", width: 2.5, shape: "hv" },
     hoverinfo: "skip"
   };
+  const yRange = autoYRange(records);
   const layout = {
     margin: { t: 16, r: 20, b: 44, l: 56 },
     xaxis: { title: "iteration", dtick: 1, gridcolor: "#eee" },
-    yaxis: { title: "validation accuracy", gridcolor: "#eee" },
+    yaxis: {
+      title: "validation accuracy",
+      gridcolor: "#eee",
+      ...(yRange ? { range: yRange, autorange: false } : {})
+    },
     plot_bgcolor: "#fff", paper_bgcolor: "#fff",
     showlegend: false,
     hovermode: "closest"
@@ -368,15 +390,6 @@ function renderChartCombined(allRecords, runs) {
     line: { color: "#bbb", width: 1, dash: "dash" }
   }));
 
-  // Run labels above the chart.
-  const annotations = runs.map(r => ({
-    x: (r.startIdx + r.endIdx) / 2,
-    y: 1.04, yref: "paper",
-    text: escapeHtml(r.label),
-    showarrow: false,
-    font: { size: 11, color: "#888" }
-  }));
-
   const dots = {
     x: xs, y: ys,
     mode: "markers",
@@ -395,15 +408,19 @@ function renderChartCombined(allRecords, runs) {
     connectgaps: false,
     hoverinfo: "skip"
   };
+  const yRange = autoYRange(allRecords);
   const layout = {
-    margin: { t: 40, r: 20, b: 44, l: 56 },
+    margin: { t: 16, r: 20, b: 44, l: 56 },
     xaxis: { title: "iteration (cumulative across runs)", gridcolor: "#eee" },
-    yaxis: { title: "validation accuracy", gridcolor: "#eee" },
+    yaxis: {
+      title: "validation accuracy",
+      gridcolor: "#eee",
+      ...(yRange ? { range: yRange, autorange: false } : {})
+    },
     plot_bgcolor: "#fff", paper_bgcolor: "#fff",
     showlegend: false,
     hovermode: "closest",
-    shapes,
-    annotations
+    shapes
   };
   Plotly.newPlot("chart", [line, dots], layout, { displayModeBar: false, responsive: true });
 
