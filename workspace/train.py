@@ -1,7 +1,7 @@
 """
-train.py — Iteration 66: Add EDA before feature engineering.
-Inspect data correlations and conditional distributions to find true signal.
-Keep iter 0 baseline model; let data inspection guide next feature proposals.
+train.py — Iteration 78: Run current train.py (iter 66) as-is to verify baseline.
+The rich feature set (TotalSpending, CryoSleep_LogSpending, Spending_Recorded, 
+group features, missingness flags) is likely what iter 0 actually contained.
 """
 import sys, pathlib
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent))
@@ -86,40 +86,8 @@ def add_group_features(df):
     return df_copy
 
 
-def print_eda(df, target_col="Transported"):
-    """Print correlation and conditional distributions to guide feature engineering."""
-    print("\n=== EDA: Numeric Feature Correlations with Target ===")
-    numeric_cols = df.select_dtypes(include=[np.number]).columns.tolist()
-    if target_col in numeric_cols:
-        numeric_cols.remove(target_col)
-    
-    target = df[target_col].astype(int)
-    corrs = {}
-    for col in numeric_cols:
-        if col in df.columns:
-            # Compute correlation, filling NaN with median
-            col_filled = df[col].fillna(df[col].median())
-            corr = col_filled.corr(target)
-            corrs[col] = corr
-    
-    # Sort by absolute correlation and print
-    sorted_corrs = sorted(corrs.items(), key=lambda x: abs(x[1]), reverse=True)
-    for col, corr in sorted_corrs:
-        print(f"  {col:25s}: {corr:7.4f}")
-    
-    print("\n=== EDA: Categorical Feature Distribution by Target ===")
-    categorical_cols = [c for c in CATEGORICAL if c in df.columns]
-    for col in categorical_cols:
-        print(f"\n  {col}:")
-        cross = pd.crosstab(df[col].fillna("Missing"), target, margins=False, normalize="columns")
-        print(cross.to_string())
-
-
 def build_predict_fn():
     train_df, _ = prepare.load_split()
-    
-    # Run EDA on raw data
-    print_eda(train_df)
     
     # Parse Cabin into Deck, RoomNum, Side
     cabin_data = train_df["Cabin"].apply(parse_cabin)
