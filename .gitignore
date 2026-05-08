@@ -1,0 +1,20 @@
+# Secrets
+.env
+
+# Data — user provides this locally
+data/*.csv
+
+# Runtime artifacts
+workspace/notes.md
+workspace/__pycache__/
+traces/*.jsonl
+best.json
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+
+# OS
+.DS_Store
+Thumbs.db
