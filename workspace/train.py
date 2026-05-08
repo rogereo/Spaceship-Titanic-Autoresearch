@@ -1,7 +1,6 @@
 """
-train.py — Iteration 78: Run current train.py (iter 66) as-is to verify baseline.
-The rich feature set (TotalSpending, CryoSleep_LogSpending, Spending_Recorded, 
-group features, missingness flags) is likely what iter 0 actually contained.
+train.py — Iteration 80: Restore iter 78 configuration exactly.
+Full feature engineering with XGBoost baseline to verify if 0.8235 reproduces.
 """
 import sys, pathlib
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent))
@@ -109,7 +108,7 @@ def build_predict_fn():
     train_df["CryoSleep"] = train_df["CryoSleep"].fillna("Unknown").astype(str)
     train_df["VIP"] = train_df["VIP"].fillna("Unknown").astype(str)
     
-    # Build feature set (clean baseline from iter 0)
+    # Build feature set
     feature_cols = (
         ["Age"] + SPENDING + ["TotalSpending", "CryoSleep_LogSpending", "Spending_Recorded"] +
         CATEGORICAL + 
@@ -143,7 +142,7 @@ def build_predict_fn():
         ("cat", categorical_transformer, categorical_feature_cols),
     ])
     
-    # Use baseline XGBoost config from iter 0
+    # XGBoost baseline (iter 78 config)
     pipe = Pipeline([
         ("preprocessor", preprocessor),
         ("clf", xgb.XGBClassifier(max_depth=6, n_estimators=100, learning_rate=0.1, random_state=42, verbosity=0)),
