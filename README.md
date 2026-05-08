@@ -12,7 +12,7 @@ The system has three parts and they stay decoupled:
 
 1. **The harness** ([`autoresearch_loop.py`](./autoresearch_loop.py)) — orchestrates the loop. Reads files, calls the Anthropic API, executes code, ratchets on success, reverts on failure, writes the trace.
 2. **The problem definition** — [`prepare.py`](./prepare.py) (immutable evaluator), [`workspace/train.py`](./workspace/train.py) (the agent's sandbox, rewritten each turn), and [`program.md`](./program.md) (the research brief).
-3. **The view** ([`viz.html`](./viz.html)) — single-file Plotly chart with click-to-expand iteration details, reads the JSONL trace.
+3. **The view** ([`index.html`](./index.html)) — single-file Plotly chart with click-to-expand iteration details, reads the JSONL trace.
 
 The harness reads JSONL. The viewer reads JSONL. No shared imports.
 
@@ -27,7 +27,7 @@ spaceship-titanic-autoresearch/
 ├── prepare.py                  # immutable evaluator
 ├── program.md                  # research brief
 ├── autoresearch_loop.py        # the harness
-├── viz.html                    # the trace viewer
+├── index.html                  # the trace viewer
 ├── data/                       # gitignored; user places train.csv here
 ├── workspace/
 │   ├── train.py                # agent's sandbox (starts as baseline)
@@ -69,11 +69,18 @@ are hard-reset out of git history; the kept iterations form a clean staircase.
 
 ## View the trace
 
-```
-python -m http.server          # serve the repo so fetch() can read the JSONL
+```powershell
+python -m http.server --bind 127.0.0.1     # serve the repo so fetch() can read the JSONL
 ```
 
-Then open `http://localhost:8000/viz.html?trace=traces/run_<timestamp>.jsonl`.
+Then open `http://localhost:8000/`.
+
+The viewer auto-discovers trace files in `traces/`. With one trace it loads it
+directly; with several it shows a picker. To deep-link a specific trace use
+`http://localhost:8000/?trace=traces/run_<timestamp>.jsonl`.
+
+> The `--bind 127.0.0.1` flag matters: without it, `http.server` advertises
+> `http://[::]:8000/`, which Chrome refuses with `ERR_ADDRESS_INVALID`.
 
 The chart shows attempt scores as colored dots (green=kept, grey=reverted,
 red=crashed, orange=parse_failed) and the running best as a staircase line.

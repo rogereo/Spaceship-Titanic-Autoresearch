@@ -279,14 +279,56 @@ function renderDetail(r) {
   el.scrollIntoView({ behavior: "smooth", block: "nearest" });
 }
 
-(async () => {
-  const tracePath = getParam("trace");
-  if (!tracePath) {
-    document.querySelector("main").innerHTML =
-      `<div class="err">No trace specified. Open this page with <code>?trace=traces/run_*.jsonl</code> in the URL.</div>`;
-    document.getElementById("meta").textContent = "no trace";
+async function discoverTraces() {
+  const res = await fetch("traces/");
+  if (!res.ok) return [];
+  const html = await res.text();
+  const seen = new Set();
+  const files = [];
+  for (const m of html.matchAll(/href="([^"]+\.jsonl)"/gi)) {
+    const name = m[1].split("/").pop();
+    if (!seen.has(name)) { seen.add(name); files.push(name); }
+  }
+  files.sort();
+  return files.reverse();
+}
+
+function renderTracePicker(files) {
+  document.getElementById("meta").textContent = `${files.length} trace file(s) available`;
+  const main = document.querySelector("main");
+  if (!files.length) {
+    main.innerHTML = `<div class="err">No trace files found in <code>traces/</code>. Run <code>python autoresearch_loop.py</code> first.</div>`;
     return;
   }
+  const items = files.map(f => `<li><a href="?trace=traces/${encodeURIComponent(f)}">${escapeHtml(f)}</a></li>`).join("");
+  main.innerHTML = `
+    <h2 style="font-size:16px;font-weight:600;margin:8px 0 12px">Pick a trace</h2>
+    <ul style="line-height:1.9;padding-left:20px">${items}</ul>
+    <p style="color:#666;font-size:13px">Most recent first.</p>
+  `;
+}
+
+(async () => {
+  let tracePath = getParam("trace");
+
+  if (!tracePath) {
+    try {
+      const files = await discoverTraces();
+      if (files.length === 1) {
+        // Auto-redirect when there's exactly one trace.
+        window.location.replace(`?trace=traces/${encodeURIComponent(files[0])}`);
+        return;
+      }
+      renderTracePicker(files);
+    } catch (e) {
+      document.querySelector("main").innerHTML =
+        `<div class="err">Could not list <code>traces/</code>: ${escapeHtml(e.message)}<br>
+        Tip: serve this directory with <code>python -m http.server --bind 127.0.0.1</code>, then open <code>http://localhost:8000/</code>.</div>`;
+      document.getElementById("meta").textContent = "error";
+    }
+    return;
+  }
+
   try {
     const records = await loadTrace(tracePath);
     renderHeader(records, tracePath);
@@ -298,7 +340,7 @@ function renderDetail(r) {
   } catch (e) {
     document.querySelector("main").innerHTML =
       `<div class="err">Failed to load trace: ${escapeHtml(e.message)}<br>
-      Tip: serve this directory with <code>python -m http.server</code> so <code>fetch()</code> can read the JSONL.</div>`;
+      Tip: serve this directory with <code>python -m http.server --bind 127.0.0.1</code> so <code>fetch()</code> can read the JSONL.</div>`;
     document.getElementById("meta").textContent = "error";
   }
 })();
