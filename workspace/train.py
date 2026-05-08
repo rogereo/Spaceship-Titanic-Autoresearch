@@ -1,6 +1,5 @@
 """
-train.py — Iteration 86: Restore iter 80 configuration exactly.
-Testing reproducibility of 0.8235 baseline with full feature engineering.
+train.py — Iteration 89: Diagnose feature importance to identify and remove low-signal features.
 """
 import sys, pathlib
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent))
@@ -142,13 +141,35 @@ def build_predict_fn():
         ("cat", categorical_transformer, categorical_feature_cols),
     ])
     
-    # XGBoost baseline (iter 80 config)
+    # XGBoost baseline
     pipe = Pipeline([
         ("preprocessor", preprocessor),
         ("clf", xgb.XGBClassifier(max_depth=6, n_estimators=100, learning_rate=0.1, random_state=42, verbosity=0)),
     ])
     
     pipe.fit(X, y)
+    
+    # Extract and print feature importance
+    clf = pipe.named_steps["clf"]
+    feature_importance = clf.feature_importances_
+    
+    # Get feature names from preprocessor
+    preprocessor_fitted = pipe.named_steps["preprocessor"]
+    onehot_encoder = preprocessor_fitted.named_transformers_["cat"].named_steps["onehot"]
+    onehot_feature_names = onehot_encoder.get_feature_names_out(categorical_feature_cols).tolist()
+    all_feature_names = numeric_feature_cols + onehot_feature_names
+    
+    # Sort by importance
+    importance_df = pd.DataFrame({
+        "feature": all_feature_names,
+        "importance": feature_importance
+    }).sort_values("importance", ascending=False)
+    
+    print("\n=== TOP 15 FEATURE IMPORTANCES ===", file=sys.stderr)
+    for idx, row in importance_df.head(15).iterrows():
+        print(f"{row['feature']:40s} {row['importance']:.6f}", file=sys.stderr)
+    print(f"\nTotal features: {len(importance_df)}", file=sys.stderr)
+    print(f"Non-zero importance: {(importance_df['importance'] > 0).sum()}", file=sys.stderr)
     
     def predict(X_val):
         cabin_data = X_val["Cabin"].apply(parse_cabin)
