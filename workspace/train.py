@@ -1,5 +1,5 @@
 """
-train.py — group structure from PassengerId, explicit zero imputation for spending.
+train.py — logistic regression with robust categorical encoding, cabin parsing, group ID, spending-as-zero.
 """
 import sys, pathlib
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent))
@@ -48,7 +48,7 @@ def build_predict_fn():
     # Extract group ID from PassengerId
     train_df["GroupId"] = train_df["PassengerId"].apply(extract_group_id)
     
-    # Fill missing values in spending columns with 0 (not used)
+    # Fill missing values in spending columns with 0 (indicates not spent)
     for col in SPENDING:
         train_df[col] = train_df[col].fillna(0)
     
