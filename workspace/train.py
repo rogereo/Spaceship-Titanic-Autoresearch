@@ -1,6 +1,6 @@
 """
-train.py — Iteration 118: Remove Age_Missing and RoomNum_Missing flags.
-Revert to iter 80 baseline exactly to confirm 0.8235 score.
+train.py — Iteration 120: Revert to exact iter 80 baseline.
+Remove HasZeroSpending feature added in iter 119 that caused regression to 0.8125.
 """
 import sys, pathlib
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent))
