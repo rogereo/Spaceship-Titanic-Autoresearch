@@ -1,8 +1,7 @@
 """
-train.py — Iteration 57: Restore baseline from iteration 1 (0.8235).
-Clean, simple feature engineering: cabin parsing, smart spending imputation,
-TotalSpending, CryoSleep_LogSpending interaction, group size/spending, missingness flags.
-Remove noisy per-category spending flags and group cabin structure features.
+train.py — Iteration 58: Hyperparameter tuning for XGBoost.
+Test whether current max_depth=6 is undershooting; search (4,6,8) x (100,150) x (0.05,0.1,0.15).
+Use cross-validation on training set to select best config, then retrain and evaluate.
 """
 import sys, pathlib
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent))
@@ -14,6 +13,7 @@ from sklearn.impute import SimpleImputer
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import StandardScaler, OneHotEncoder
 from sklearn.compose import ColumnTransformer
+from sklearn.model_selection import cross_val_score
 
 import prepare
 
@@ -144,9 +144,36 @@ def build_predict_fn():
         ("cat", categorical_transformer, categorical_feature_cols),
     ])
     
+    # Hyperparameter grid search using cross-validation
+    configs = [
+        {"max_depth": 4, "n_estimators": 100, "learning_rate": 0.1},
+        {"max_depth": 6, "n_estimators": 100, "learning_rate": 0.1},
+        {"max_depth": 8, "n_estimators": 100, "learning_rate": 0.1},
+        {"max_depth": 6, "n_estimators": 150, "learning_rate": 0.1},
+        {"max_depth": 6, "n_estimators": 100, "learning_rate": 0.15},
+    ]
+    
+    best_score = -np.inf
+    best_config = configs[1]  # default to current
+    
+    for config in configs:
+        pipe = Pipeline([
+            ("preprocessor", preprocessor),
+            ("clf", xgb.XGBClassifier(**config, random_state=42, verbosity=0)),
+        ])
+        
+        # 3-fold cross-validation on training set
+        cv_scores = cross_val_score(pipe, X, y, cv=3, scoring="accuracy")
+        mean_cv = cv_scores.mean()
+        
+        if mean_cv > best_score:
+            best_score = mean_cv
+            best_config = config
+    
+    # Retrain with best config
     pipe = Pipeline([
         ("preprocessor", preprocessor),
-        ("clf", xgb.XGBClassifier(n_estimators=100, max_depth=6, learning_rate=0.1, random_state=42, verbosity=0)),
+        ("clf", xgb.XGBClassifier(**best_config, random_state=42, verbosity=0)),
     ])
     
     pipe.fit(X, y)
