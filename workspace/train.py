@@ -1,5 +1,5 @@
 """
-train.py — logistic regression with cabin parsing, group features, and aggregate spending.
+train.py — logistic regression with cabin parsing, group features, age missingness flag.
 """
 import sys, pathlib
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent))
@@ -52,6 +52,9 @@ def build_predict_fn():
     group_sizes = train_df["GroupId"].value_counts().to_dict()
     train_df["GroupSize"] = train_df["GroupId"].map(group_sizes).fillna(1)
     
+    # Flag: is Age missing?
+    train_df["AgeMissing"] = train_df["Age"].isna().astype(int)
+    
     # Fill missing values in spending columns with 0 (indicates not spent)
     for col in SPENDING:
         train_df[col] = train_df[col].fillna(0)
@@ -64,7 +67,7 @@ def build_predict_fn():
     train_df["VIP"] = train_df["VIP"].fillna("Unknown").astype(str)
     
     # Build feature set: include both individual spending and aggregate spending
-    feature_cols = ["Age", "TotalSpending"] + SPENDING + CATEGORICAL + ["Deck", "RoomNum", "Side", "GroupId", "GroupSize"]
+    feature_cols = ["Age", "AgeMissing", "TotalSpending"] + SPENDING + CATEGORICAL + ["Deck", "RoomNum", "Side", "GroupId", "GroupSize"]
     X = train_df[feature_cols]
     y = train_df["Transported"].astype(int)
     
@@ -80,7 +83,7 @@ def build_predict_fn():
     ])
     
     preprocessor = ColumnTransformer([
-        ("num", numeric_transformer, ["Age", "TotalSpending", "RoomNum", "GroupSize"] + SPENDING),
+        ("num", numeric_transformer, ["Age", "AgeMissing", "TotalSpending", "RoomNum", "GroupSize"] + SPENDING),
         ("cat", categorical_transformer, CATEGORICAL + ["Deck", "Side", "GroupId"]),
     ])
     
@@ -107,6 +110,9 @@ def build_predict_fn():
         
         # Compute group size using training set mapping (default to 1 for unseen groups)
         X_val_copy["GroupSize"] = X_val_copy["GroupId"].map(pipe.group_sizes).fillna(1)
+        
+        # Flag: is Age missing?
+        X_val_copy["AgeMissing"] = X_val_copy["Age"].isna().astype(int)
         
         # Fill missing spending with 0
         for col in SPENDING:
