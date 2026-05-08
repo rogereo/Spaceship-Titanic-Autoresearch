@@ -1,7 +1,8 @@
 """
-train.py — Iteration 53: Add group-level aggregate features.
-Extract group size and group median spending from PassengerId groups.
-Test whether group dynamics (size, collective spending) improve beyond 0.8229 baseline.
+train.py — Iteration 57: Restore baseline from iteration 1 (0.8235).
+Clean, simple feature engineering: cabin parsing, smart spending imputation,
+TotalSpending, CryoSleep_LogSpending interaction, group size/spending, missingness flags.
+Remove noisy per-category spending flags and group cabin structure features.
 """
 import sys, pathlib
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent))
@@ -42,7 +43,7 @@ def engineer_features(df):
     """Engineer spending and spending-cryo interaction features."""
     df_copy = df.copy()
     
-    # Track which spending values were originally recorded (not missing)
+    # Track which rows have any spending data recorded
     spending_recorded = ~df_copy[SPENDING].isna().any(axis=1)
     df_copy["Spending_Recorded"] = spending_recorded.astype(int)
     
@@ -50,18 +51,15 @@ def engineer_features(df):
     for col in SPENDING:
         missing_mask = df_copy[col].isna()
         if missing_mask.any():
-            # Compute median per HomePlanet (ignoring NaN within groups)
             group_medians = df_copy.groupby("HomePlanet")[col].median()
-            # Fill group-wise; any remaining NaN (if whole planet has no data) use global median
             df_copy.loc[missing_mask, col] = df_copy.loc[missing_mask, "HomePlanet"].map(group_medians)
             global_median = df_copy[col].median()
-            # Fix: use direct assignment instead of inplace to avoid CoW issues
             df_copy[col] = df_copy[col].fillna(global_median)
     
     # Total spending
     df_copy["TotalSpending"] = df_copy[SPENDING].sum(axis=1)
     
-    # Interaction: CryoSleep status and spending ratio
+    # Interaction: CryoSleep status and log spending
     cryo_status = df_copy["CryoSleep"].fillna(False)
     log_spending = np.log1p(df_copy["TotalSpending"])
     df_copy["CryoSleep_LogSpending"] = (
@@ -98,13 +96,13 @@ def build_predict_fn():
     train_df["RoomNum"] = cabin_data.apply(lambda x: x[1])
     train_df["Side"] = cabin_data.apply(lambda x: x[2])
     
-    # Engineer features (including smart spending imputation)
+    # Engineer features
     train_df = engineer_features(train_df)
     
     # Add group-level features
     train_df = add_group_features(train_df)
     
-    # Create explicit missingness flags for CryoSleep and VIP before filling
+    # Create explicit missingness flags for CryoSleep and VIP
     train_df["CryoSleep_Missing"] = train_df["CryoSleep"].isna().astype(int)
     train_df["VIP_Missing"] = train_df["VIP"].isna().astype(int)
     
@@ -123,7 +121,7 @@ def build_predict_fn():
     X = train_df[feature_cols]
     y = train_df["Transported"].astype(int)
     
-    # Define preprocessing for numeric and categorical columns
+    # Define preprocessing
     numeric_transformer = Pipeline([
         ("imputer", SimpleImputer(strategy="median")),
         ("scaler", StandardScaler()),
@@ -154,17 +152,16 @@ def build_predict_fn():
     pipe.fit(X, y)
     
     def predict(X_val):
-        # Parse Cabin in validation set
         cabin_data = X_val["Cabin"].apply(parse_cabin)
         X_val_copy = X_val.copy()
         X_val_copy["Deck"] = cabin_data.apply(lambda x: x[0])
         X_val_copy["RoomNum"] = cabin_data.apply(lambda x: x[1])
         X_val_copy["Side"] = cabin_data.apply(lambda x: x[2])
         
-        # Engineer features (using same smart spending imputation)
+        # Engineer features
         X_val_copy = engineer_features(X_val_copy)
         
-        # Add group-level features (computed from training group stats)
+        # Add group-level features from training stats
         X_val_copy["GroupId"] = X_val_copy["PassengerId"].apply(extract_group_id)
         X_val_copy["GroupSize"] = X_val_copy["GroupId"].map(pd.Series(
             train_df.groupby("GroupId").size().to_dict()
@@ -173,7 +170,7 @@ def build_predict_fn():
             train_df.groupby("GroupId")["TotalSpending"].median().to_dict()
         ))
         
-        # Create explicit missingness flags for CryoSleep and VIP before filling
+        # Missingness flags
         X_val_copy["CryoSleep_Missing"] = X_val_copy["CryoSleep"].isna().astype(int)
         X_val_copy["VIP_Missing"] = X_val_copy["VIP"].isna().astype(int)
         
