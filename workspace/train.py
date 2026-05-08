@@ -1,5 +1,5 @@
 """
-train.py — logistic regression with cabin parsing, group features, age missingness flag.
+train.py — simplified logistic regression: minimal feature engineering without noisy aggregate features.
 """
 import sys, pathlib
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent))
@@ -48,26 +48,16 @@ def build_predict_fn():
     # Extract group ID from PassengerId
     train_df["GroupId"] = train_df["PassengerId"].apply(extract_group_id)
     
-    # Compute group size for each passenger
-    group_sizes = train_df["GroupId"].value_counts().to_dict()
-    train_df["GroupSize"] = train_df["GroupId"].map(group_sizes).fillna(1)
-    
-    # Flag: is Age missing?
-    train_df["AgeMissing"] = train_df["Age"].isna().astype(int)
-    
     # Fill missing values in spending columns with 0 (indicates not spent)
     for col in SPENDING:
         train_df[col] = train_df[col].fillna(0)
-    
-    # Compute total spending across all categories
-    train_df["TotalSpending"] = train_df[SPENDING].sum(axis=1)
     
     # Convert CryoSleep and VIP to numeric (handle NaN explicitly)
     train_df["CryoSleep"] = train_df["CryoSleep"].fillna("Unknown").astype(str)
     train_df["VIP"] = train_df["VIP"].fillna("Unknown").astype(str)
     
-    # Build feature set: include both individual spending and aggregate spending
-    feature_cols = ["Age", "AgeMissing", "TotalSpending"] + SPENDING + CATEGORICAL + ["Deck", "RoomNum", "Side", "GroupId", "GroupSize"]
+    # Build feature set: minimal core features only
+    feature_cols = ["Age"] + SPENDING + CATEGORICAL + ["Deck", "RoomNum", "Side", "GroupId"]
     X = train_df[feature_cols]
     y = train_df["Transported"].astype(int)
     
@@ -83,7 +73,7 @@ def build_predict_fn():
     ])
     
     preprocessor = ColumnTransformer([
-        ("num", numeric_transformer, ["Age", "AgeMissing", "TotalSpending", "RoomNum", "GroupSize"] + SPENDING),
+        ("num", numeric_transformer, ["Age", "RoomNum"] + SPENDING),
         ("cat", categorical_transformer, CATEGORICAL + ["Deck", "Side", "GroupId"]),
     ])
     
@@ -93,9 +83,6 @@ def build_predict_fn():
     ])
     
     pipe.fit(X, y)
-    
-    # Store group_sizes mapping for use in predict function
-    pipe.group_sizes = group_sizes
     
     def predict(X_val):
         # Parse Cabin in validation set
@@ -108,18 +95,9 @@ def build_predict_fn():
         # Extract group ID
         X_val_copy["GroupId"] = X_val_copy["PassengerId"].apply(extract_group_id)
         
-        # Compute group size using training set mapping (default to 1 for unseen groups)
-        X_val_copy["GroupSize"] = X_val_copy["GroupId"].map(pipe.group_sizes).fillna(1)
-        
-        # Flag: is Age missing?
-        X_val_copy["AgeMissing"] = X_val_copy["Age"].isna().astype(int)
-        
         # Fill missing spending with 0
         for col in SPENDING:
             X_val_copy[col] = X_val_copy[col].fillna(0)
-        
-        # Compute total spending
-        X_val_copy["TotalSpending"] = X_val_copy[SPENDING].sum(axis=1)
         
         # Handle CryoSleep and VIP
         X_val_copy["CryoSleep"] = X_val_copy["CryoSleep"].fillna("Unknown").astype(str)
