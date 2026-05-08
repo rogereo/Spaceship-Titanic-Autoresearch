@@ -1,13 +1,13 @@
 """
-train.py — logistic regression with cabin parsing, GroupId, and explicit missingness flags.
-Minimal feature set proven to achieve 0.7907 in iter 6.
+train.py — XGBoost with cabin parsing, GroupId, and explicit missingness flags.
+Testing whether non-linear model can improve beyond 0.7907 logistic regression plateau.
 """
 import sys, pathlib
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent))
 
 import pandas as pd
 import numpy as np
-from sklearn.linear_model import LogisticRegression
+import xgboost as xgb
 from sklearn.impute import SimpleImputer
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import StandardScaler, OneHotEncoder
@@ -88,7 +88,7 @@ def build_predict_fn():
     
     pipe = Pipeline([
         ("preprocessor", preprocessor),
-        ("clf", LogisticRegression(max_iter=1000)),
+        ("clf", xgb.XGBClassifier(n_estimators=100, max_depth=5, learning_rate=0.1, random_state=42, verbosity=0)),
     ])
     
     pipe.fit(X, y)
