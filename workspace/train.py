@@ -1,7 +1,7 @@
 """
-train.py — Iteration 59: Exploratory Data Analysis (EDA).
-Print detailed statistics on the training set to identify structural features missed by baseline.
-Run EDA, gather insights, then revert to a feature-based improvement in next iteration.
+train.py — Iteration 61: Revert to clean baseline (iter 1 feature set).
+Remove HomePlanet × Destination interaction that regressed in iter 60.
+Restore proven feature engineering without added feature complexity.
 """
 import sys, pathlib
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent))
@@ -13,7 +13,6 @@ from sklearn.impute import SimpleImputer
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import StandardScaler, OneHotEncoder
 from sklearn.compose import ColumnTransformer
-from sklearn.model_selection import cross_val_score
 
 import prepare
 
@@ -37,16 +36,6 @@ def extract_group_id(passenger_id):
     if pd.isna(passenger_id):
         return np.nan
     return str(passenger_id).split("_")[0]
-
-
-def extract_passenger_num(passenger_id):
-    """Extract passenger number within group (e.g., '0001_01' -> 1)."""
-    if pd.isna(passenger_id):
-        return np.nan
-    try:
-        return int(str(passenger_id).split("_")[1])
-    except (IndexError, ValueError):
-        return np.nan
 
 
 def engineer_features(df):
@@ -97,74 +86,6 @@ def add_group_features(df):
     return df_copy
 
 
-def run_eda(df):
-    """Print exploratory statistics to understand data structure."""
-    print("\n=== EDA SUMMARY ===")
-    
-    # Class balance
-    target_dist = df["Transported"].value_counts()
-    print(f"\nClass distribution:\n{target_dist}\nRatio (False:True) = {target_dist[False]:.0f}:{target_dist[True]:.0f}")
-    
-    # Missing data
-    print("\nMissing data (count, pct):")
-    missing = df.isnull().sum()
-    missing = missing[missing > 0].sort_values(ascending=False)
-    for col, count in missing.items():
-        pct = 100 * count / len(df)
-        print(f"  {col}: {count} ({pct:.1f}%)")
-    
-    # Numeric correlations with target
-    print("\nNumeric feature correlations with Transported:")
-    for col in NUMERIC:
-        if col in df.columns:
-            corr = df[col].corr(df["Transported"].astype(int))
-            print(f"  {col}: {corr:.4f}")
-    
-    # Categorical distributions
-    print("\nCategorical feature distributions (counts per category):")
-    for col in CATEGORICAL:
-        if col in df.columns:
-            print(f"  {col}:")
-            counts = df[col].value_counts(dropna=False)
-            for cat, count in counts.items():
-                print(f"    {cat}: {count}")
-    
-    # Cabin parsing
-    cabin_data = df["Cabin"].apply(parse_cabin)
-    decks = cabin_data.apply(lambda x: x[0])
-    print(f"\nDeck distribution (counts):")
-    deck_counts = decks.value_counts(dropna=False)
-    for deck, count in deck_counts.items():
-        print(f"  {deck}: {count}")
-    
-    # Group size distribution
-    group_ids = df["PassengerId"].apply(extract_group_id)
-    group_sizes = group_ids.value_counts()
-    print(f"\nGroup size distribution:")
-    print(f"  Min: {group_sizes.min()}, Max: {group_sizes.max()}, Mean: {group_sizes.mean():.2f}")
-    print(f"  Count: {group_sizes.value_counts().to_dict()}")
-    
-    # Passenger number within group
-    pax_nums = df["PassengerId"].apply(extract_passenger_num)
-    print(f"\nPassenger number within group (unique values: {pax_nums.nunique()})")
-    print(f"  Distribution: {pax_nums.value_counts().sort_index().to_dict()}")
-    
-    # Spending pattern by Transported
-    print("\nSpending by Transported status:")
-    for spending_col in SPENDING:
-        has_spending = (df[spending_col] > 0).sum()
-        transported_with_spending = df[df["Transported"] & (df[spending_col] > 0)].shape[0]
-        not_transported_with_spending = df[~df["Transported"] & (df[spending_col] > 0)].shape[0]
-        print(f"  {spending_col}: {has_spending} total, {transported_with_spending} T, {not_transported_with_spending} NT")
-    
-    # HomePlanet × Destination cross-tabulation
-    print("\nHomePlanet × Destination cross-tabulation (counts):")
-    cross = pd.crosstab(df["HomePlanet"], df["Destination"], margins=False)
-    print(cross)
-    
-    print("\n=== END EDA ===\n")
-
-
 def build_predict_fn():
     train_df, _ = prepare.load_split()
     
@@ -180,9 +101,6 @@ def build_predict_fn():
     # Add group-level features
     train_df = add_group_features(train_df)
     
-    # Run EDA before model building
-    run_eda(train_df)
-    
     # Create explicit missingness flags for CryoSleep and VIP
     train_df["CryoSleep_Missing"] = train_df["CryoSleep"].isna().astype(int)
     train_df["VIP_Missing"] = train_df["VIP"].isna().astype(int)
@@ -191,7 +109,7 @@ def build_predict_fn():
     train_df["CryoSleep"] = train_df["CryoSleep"].fillna("Unknown").astype(str)
     train_df["VIP"] = train_df["VIP"].fillna("Unknown").astype(str)
     
-    # Build feature set
+    # Build feature set (clean baseline from iter 1)
     feature_cols = (
         ["Age"] + SPENDING + ["TotalSpending", "CryoSleep_LogSpending", "Spending_Recorded"] +
         CATEGORICAL + 
@@ -225,7 +143,7 @@ def build_predict_fn():
         ("cat", categorical_transformer, categorical_feature_cols),
     ])
     
-    # Use best config from iter 58
+    # Use baseline XGBoost config from iter 1
     pipe = Pipeline([
         ("preprocessor", preprocessor),
         ("clf", xgb.XGBClassifier(max_depth=6, n_estimators=100, learning_rate=0.1, random_state=42, verbosity=0)),
