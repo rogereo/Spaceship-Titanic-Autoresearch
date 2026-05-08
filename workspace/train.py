@@ -1,7 +1,7 @@
 """
-train.py — Iteration 61: Revert to clean baseline (iter 1 feature set).
-Remove HomePlanet × Destination interaction that regressed in iter 60.
-Restore proven feature engineering without added feature complexity.
+train.py — Iteration 66: Add EDA before feature engineering.
+Inspect data correlations and conditional distributions to find true signal.
+Keep iter 0 baseline model; let data inspection guide next feature proposals.
 """
 import sys, pathlib
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent))
@@ -86,8 +86,40 @@ def add_group_features(df):
     return df_copy
 
 
+def print_eda(df, target_col="Transported"):
+    """Print correlation and conditional distributions to guide feature engineering."""
+    print("\n=== EDA: Numeric Feature Correlations with Target ===")
+    numeric_cols = df.select_dtypes(include=[np.number]).columns.tolist()
+    if target_col in numeric_cols:
+        numeric_cols.remove(target_col)
+    
+    target = df[target_col].astype(int)
+    corrs = {}
+    for col in numeric_cols:
+        if col in df.columns:
+            # Compute correlation, filling NaN with median
+            col_filled = df[col].fillna(df[col].median())
+            corr = col_filled.corr(target)
+            corrs[col] = corr
+    
+    # Sort by absolute correlation and print
+    sorted_corrs = sorted(corrs.items(), key=lambda x: abs(x[1]), reverse=True)
+    for col, corr in sorted_corrs:
+        print(f"  {col:25s}: {corr:7.4f}")
+    
+    print("\n=== EDA: Categorical Feature Distribution by Target ===")
+    categorical_cols = [c for c in CATEGORICAL if c in df.columns]
+    for col in categorical_cols:
+        print(f"\n  {col}:")
+        cross = pd.crosstab(df[col].fillna("Missing"), target, margins=False, normalize="columns")
+        print(cross.to_string())
+
+
 def build_predict_fn():
     train_df, _ = prepare.load_split()
+    
+    # Run EDA on raw data
+    print_eda(train_df)
     
     # Parse Cabin into Deck, RoomNum, Side
     cabin_data = train_df["Cabin"].apply(parse_cabin)
@@ -109,7 +141,7 @@ def build_predict_fn():
     train_df["CryoSleep"] = train_df["CryoSleep"].fillna("Unknown").astype(str)
     train_df["VIP"] = train_df["VIP"].fillna("Unknown").astype(str)
     
-    # Build feature set (clean baseline from iter 1)
+    # Build feature set (clean baseline from iter 0)
     feature_cols = (
         ["Age"] + SPENDING + ["TotalSpending", "CryoSleep_LogSpending", "Spending_Recorded"] +
         CATEGORICAL + 
@@ -143,7 +175,7 @@ def build_predict_fn():
         ("cat", categorical_transformer, categorical_feature_cols),
     ])
     
-    # Use baseline XGBoost config from iter 1
+    # Use baseline XGBoost config from iter 0
     pipe = Pipeline([
         ("preprocessor", preprocessor),
         ("clf", xgb.XGBClassifier(max_depth=6, n_estimators=100, learning_rate=0.1, random_state=42, verbosity=0)),
