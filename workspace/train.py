@@ -1,7 +1,6 @@
 """
-train.py — XGBoost with cabin parsing, GroupId, and richer CryoSleep-spending interaction.
-Iteration 36: Replace binary CryoSleep_NoSpending with CryoSleep_Spending_Ratio to test
-whether the intensity of spending conditioned on cryo status improves prediction.
+train.py — Iteration 42: Debug and restore XGBoost with cabin parsing.
+Verifying feature consistency between fit and predict to diagnose 0.7234 regression.
 """
 import sys, pathlib
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent))
@@ -50,8 +49,6 @@ def engineer_features(df):
     df_copy["TotalSpending"] = df_copy[SPENDING].sum(axis=1)
     
     # Interaction: CryoSleep status and spending ratio
-    # For passengers in cryo-sleep, compute spending as a fraction; for others, set to 0.
-    # Use log-transformed spending to capture intensity better.
     cryo_status = df_copy["CryoSleep"].fillna(False)
     log_spending = np.log1p(df_copy["TotalSpending"])
     df_copy["CryoSleep_LogSpending"] = (
