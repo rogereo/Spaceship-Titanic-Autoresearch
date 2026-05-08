@@ -1,6 +1,6 @@
 """
-train.py — Iteration 80: Restore iter 78 configuration exactly.
-Full feature engineering with XGBoost baseline to verify if 0.8235 reproduces.
+train.py — Iteration 86: Restore iter 80 configuration exactly.
+Testing reproducibility of 0.8235 baseline with full feature engineering.
 """
 import sys, pathlib
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent))
@@ -142,7 +142,7 @@ def build_predict_fn():
         ("cat", categorical_transformer, categorical_feature_cols),
     ])
     
-    # XGBoost baseline (iter 78 config)
+    # XGBoost baseline (iter 80 config)
     pipe = Pipeline([
         ("preprocessor", preprocessor),
         ("clf", xgb.XGBClassifier(max_depth=6, n_estimators=100, learning_rate=0.1, random_state=42, verbosity=0)),
