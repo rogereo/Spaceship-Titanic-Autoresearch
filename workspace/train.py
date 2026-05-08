@@ -1,7 +1,7 @@
 """
-train.py — XGBoost with cabin parsing, GroupId, and spending ratio features.
-Iteration 30: Add engineered spending features (TotalSpending, spending category ratios)
-to test whether spending patterns encode passenger behavior more predictively than raw values.
+train.py — XGBoost with cabin parsing, GroupId, and cryo-sleep/spending interaction.
+Iteration 32: Add CryoSleep_NoSpending interaction feature to test whether the coupling
+between cryo-sleep status and zero spending is predictive.
 """
 import sys, pathlib
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent))
@@ -38,27 +38,23 @@ def extract_group_id(passenger_id):
     return str(passenger_id).split("_")[0]
 
 
-def engineer_spending_features(df):
-    """Add derived spending features: TotalSpending and category ratios."""
+def engineer_features(df):
+    """Engineer interaction and spending features."""
     df_copy = df.copy()
     
-    # Fill missing spending with 0 first
+    # Fill missing spending with 0
     for col in SPENDING:
         df_copy[col] = df_copy[col].fillna(0)
     
-    # Total spending across all categories
+    # Total spending
     df_copy["TotalSpending"] = df_copy[SPENDING].sum(axis=1)
     
-    # Ratio of each spending category to total (handle division by zero)
-    for col in SPENDING:
-        df_copy[f"{col}_Ratio"] = np.where(
-            df_copy["TotalSpending"] > 0,
-            df_copy[col] / df_copy["TotalSpending"],
-            0
-        )
-    
-    # Mark whether passenger spent anything (binary indicator)
-    df_copy["AnySpending"] = (df_copy["TotalSpending"] > 0).astype(int)
+    # Interaction: CryoSleep and zero spending
+    # If CryoSleep is missing, treat as False for this interaction
+    cryo_status = df_copy["CryoSleep"].fillna(False)
+    df_copy["CryoSleep_NoSpending"] = (
+        (cryo_status == True) & (df_copy["TotalSpending"] == 0)
+    ).astype(int)
     
     return df_copy
 
@@ -75,8 +71,8 @@ def build_predict_fn():
     # Extract group ID from PassengerId
     train_df["GroupId"] = train_df["PassengerId"].apply(extract_group_id)
     
-    # Engineer spending features
-    train_df = engineer_spending_features(train_df)
+    # Engineer features
+    train_df = engineer_features(train_df)
     
     # Create explicit missingness flags for CryoSleep and VIP before filling
     train_df["CryoSleep_Missing"] = train_df["CryoSleep"].isna().astype(int)
@@ -86,10 +82,9 @@ def build_predict_fn():
     train_df["CryoSleep"] = train_df["CryoSleep"].fillna("Unknown").astype(str)
     train_df["VIP"] = train_df["VIP"].fillna("Unknown").astype(str)
     
-    # Build feature set: core features + cabin parsing + spending engineering + missingness flags
-    spending_ratio_cols = [f"{col}_Ratio" for col in SPENDING]
+    # Build feature set
     feature_cols = (
-        ["Age"] + SPENDING + ["TotalSpending", "AnySpending"] + spending_ratio_cols +
+        ["Age"] + SPENDING + ["TotalSpending", "CryoSleep_NoSpending"] +
         CATEGORICAL + 
         ["Deck", "RoomNum", "Side", "GroupId"] + 
         ["CryoSleep_Missing", "VIP_Missing"]
@@ -110,7 +105,7 @@ def build_predict_fn():
     
     numeric_feature_cols = (
         ["Age", "RoomNum", "CryoSleep_Missing", "VIP_Missing"] + 
-        SPENDING + ["TotalSpending", "AnySpending"] + spending_ratio_cols
+        SPENDING + ["TotalSpending", "CryoSleep_NoSpending"]
     )
     categorical_feature_cols = CATEGORICAL + ["Deck", "Side", "GroupId"]
     
@@ -137,8 +132,8 @@ def build_predict_fn():
         # Extract group ID
         X_val_copy["GroupId"] = X_val_copy["PassengerId"].apply(extract_group_id)
         
-        # Engineer spending features
-        X_val_copy = engineer_spending_features(X_val_copy)
+        # Engineer features
+        X_val_copy = engineer_features(X_val_copy)
         
         # Create explicit missingness flags for CryoSleep and VIP before filling
         X_val_copy["CryoSleep_Missing"] = X_val_copy["CryoSleep"].isna().astype(int)
