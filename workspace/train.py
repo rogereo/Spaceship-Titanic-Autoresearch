@@ -1,6 +1,6 @@
 """
 train.py — XGBoost with cabin parsing, GroupId, and explicit missingness flags.
-Iteration 19: Testing max_depth=6 to assess if current trees underfit.
+Iteration 21: Revert to max_depth=6, n_estimators=100, learning_rate=0.1 (iter 2 config) to confirm 0.8143 baseline.
 """
 import sys, pathlib
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent))
