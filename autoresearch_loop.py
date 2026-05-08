@@ -35,7 +35,7 @@ MAX_ITERATIONS = 15
 NO_IMPROVEMENT_LIMIT = 5
 COST_CAP_USD = 10.0
 TIMEOUT_SECONDS = 60
-MAX_TOKENS = 3000
+MAX_TOKENS = 8000
 RECENT_ITERS_IN_PROMPT = 3
 
 # Haiku 4.5 pricing — adjust if Anthropic publishes different rates.
@@ -290,8 +290,15 @@ def build_user_prompt(program_md, train_py, best, trace, last_run):
     last_stdout = truncate_tail(last_run.get("stdout", ""), STDOUT_TRUNC) if last_run else ""
     last_stderr = truncate_tail(last_run.get("stderr", ""), STDERR_TRUNC) if last_run else ""
 
+    train_lines = train_py.count("\n") + 1
+    train_tokens_est = max(1, len(train_py) // 4)
+    headroom_pct = int(100 * train_tokens_est / MAX_TOKENS)
+
     return f"""# Research brief
 {program_md}
+
+# Current train.py size
+{train_lines} lines · ~{train_tokens_est} tokens to rewrite (~{headroom_pct}% of the {MAX_TOKENS}-token output budget). If this is approaching the budget or the file is getting unwieldy, prioritize a behavior-preserving refactor this turn.
 
 # Current train.py
 ```python

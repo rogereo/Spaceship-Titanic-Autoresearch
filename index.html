@@ -160,6 +160,23 @@ function computeRunningBest(records) {
   });
 }
 
+// Y-axis range that focuses on the meaningful score band.
+// Trims to the 2nd–98th percentile so a single crash at score=0 doesn't
+// flatten the chart, then pads by 15% of the visible range.
+function autoYRange(records) {
+  const scores = records
+    .map(r => r.score)
+    .filter(s => typeof s === "number");
+  if (!scores.length) return null;
+  const sorted = [...scores].sort((a, b) => a - b);
+  const n = sorted.length;
+  const lo = sorted[Math.floor(n * 0.02)];
+  const hi = sorted[Math.min(n - 1, Math.ceil(n * 0.98) - 1)];
+  const span = Math.max(hi - lo, 0.01);
+  const pad = Math.max(span * 0.15, 0.005);
+  return [Math.max(0, lo - pad), Math.min(1, hi + pad)];
+}
+
 function renderHeader(records, tracePath) {
   const meta = document.getElementById("meta");
   if (!records.length) {
@@ -175,6 +192,7 @@ function renderHeader(records, tracePath) {
   const bestStr = Number.isFinite(bestScore) ? bestScore.toFixed(4) : "n/a";
   const start = records[0].timestamp || "";
   meta.innerHTML = `
+    <span><a href="?">← all traces</a></span>
     <span>trace: <code>${escapeHtml(tracePath)}</code></span>
     <span>iterations: ${records.length}</span>
     <span>best: <strong>${bestStr}</strong></span>
@@ -211,10 +229,15 @@ function renderChart(records) {
     line: { color: "#1976d2", width: 2.5, shape: "hv" },
     hoverinfo: "skip"
   };
+  const yRange = autoYRange(records);
   const layout = {
     margin: { t: 16, r: 20, b: 44, l: 56 },
     xaxis: { title: "iteration", dtick: 1, gridcolor: "#eee" },
-    yaxis: { title: "validation accuracy", gridcolor: "#eee" },
+    yaxis: {
+      title: "validation accuracy",
+      gridcolor: "#eee",
+      ...(yRange ? { range: yRange, autorange: false } : {})
+    },
     plot_bgcolor: "#fff", paper_bgcolor: "#fff",
     showlegend: false,
     hovermode: "closest"
@@ -237,7 +260,10 @@ function renderDetail(r) {
   const dur = (typeof r.duration_seconds === "number") ? r.duration_seconds.toFixed(1) + "s" : "—";
   const status = r.status || "?";
 
-  let html = `<h2>Iteration ${r.iteration}
+  const runTag = r._run_label
+    ? `<span style="color:#888;font-weight:400;font-size:12px;margin-right:4px">${escapeHtml(r._run_label)}</span>`
+    : "";
+  let html = `<h2>${runTag}Iteration ${r.iteration}
     <span class="pill ${escapeHtml(status)}">${escapeHtml(status)}</span>
     <span style="color:#666;font-weight:400;font-size:13px">score ${sc} · ${dur}</span>
   </h2>`;
@@ -279,14 +305,216 @@ function renderDetail(r) {
   el.scrollIntoView({ behavior: "smooth", block: "nearest" });
 }
 
-(async () => {
-  const tracePath = getParam("trace");
-  if (!tracePath) {
-    document.querySelector("main").innerHTML =
-      `<div class="err">No trace specified. Open this page with <code>?trace=traces/run_*.jsonl</code> in the URL.</div>`;
-    document.getElementById("meta").textContent = "no trace";
+async function discoverTraces() {
+  const res = await fetch("traces/");
+  if (!res.ok) return [];
+  const html = await res.text();
+  const seen = new Set();
+  const files = [];
+  for (const m of html.matchAll(/href="([^"]+\.jsonl)"/gi)) {
+    const name = m[1].split("/").pop();
+    if (!seen.has(name)) { seen.add(name); files.push(name); }
+  }
+  files.sort();
+  return files.reverse();
+}
+
+function renderTracePicker(files) {
+  document.getElementById("meta").textContent = `${files.length} trace file(s) available`;
+  const main = document.querySelector("main");
+  if (!files.length) {
+    main.innerHTML = `<div class="err">No trace files found in <code>traces/</code>. Run <code>python autoresearch_loop.py</code> first.</div>`;
     return;
   }
+  const items = files.map(f => `<li><a href="?trace=traces/${encodeURIComponent(f)}">${escapeHtml(f)}</a></li>`).join("");
+  main.innerHTML = `
+    <p style="margin:6px 0 16px"><a href="?combined=1" style="font-weight:600">→ View all runs combined</a></p>
+    <h2 style="font-size:16px;font-weight:600;margin:8px 0 12px">Or pick a single trace</h2>
+    <ul style="line-height:1.9;padding-left:20px">${items}</ul>
+    <p style="color:#666;font-size:13px">Most recent first.</p>
+  `;
+}
+
+function shortRunLabel(filename, idx) {
+  const m = filename.match(/run_(\d{8})_(\d{6})\.jsonl/i);
+  if (m) {
+    const d = m[1], t = m[2];
+    return `Run ${idx + 1} · ${d.slice(4, 6)}-${d.slice(6, 8)} ${t.slice(0, 2)}:${t.slice(2, 4)}`;
+  }
+  return `Run ${idx + 1}`;
+}
+
+function renderChartCombined(allRecords, runs) {
+  const xs = allRecords.map((_, i) => i);
+  const ys = allRecords.map(r => (typeof r.score === "number" ? r.score : null));
+  const colors = allRecords.map(r => COLORS[r.status] || "#999");
+  const hover = allRecords.map((r, i) => {
+    const plan = (r.plan || "").split(/\r?\n/)[0].slice(0, 100);
+    const sc = (typeof r.score === "number") ? r.score.toFixed(4) : "n/a";
+    return `${escapeHtml(r._run_label)}<br>iter ${r.iteration} (global ${i}) · ${r.status}<br>score: ${sc}<br>${escapeHtml(plan)}`;
+  });
+
+  // Running-best computed per run, with a null break between runs so the line
+  // visually segments at boundaries.
+  const best = [];
+  let runIdx = 0;
+  let runBest = -Infinity;
+  for (let i = 0; i < allRecords.length; i++) {
+    if (i > runs[runIdx].endIdx) {
+      runIdx++;
+      runBest = -Infinity;
+      best.push(null);   // gap between runs
+    }
+    const s = allRecords[i].score;
+    if (typeof s === "number" && s > runBest) runBest = s;
+    best.push(Number.isFinite(runBest) ? runBest : null);
+  }
+  // best.length is allRecords.length + (runs.length - 1) due to inserted nulls.
+  // We need a parallel x-array that includes the null positions.
+  const bestX = [];
+  runIdx = 0;
+  for (let i = 0; i < allRecords.length; i++) {
+    if (i > runs[runIdx].endIdx) {
+      runIdx++;
+      bestX.push(runs[runIdx].startIdx - 0.5);  // x at the boundary for the null
+    }
+    bestX.push(i);
+  }
+
+  // Vertical dashed separators at every run boundary (between run k-1 and run k).
+  const shapes = runs.slice(1).map(r => ({
+    type: "line",
+    xref: "x", yref: "paper",
+    x0: r.startIdx - 0.5, x1: r.startIdx - 0.5,
+    y0: 0, y1: 1,
+    line: { color: "#bbb", width: 1, dash: "dash" }
+  }));
+
+  const dots = {
+    x: xs, y: ys,
+    mode: "markers",
+    type: "scatter",
+    name: "attempt",
+    marker: { color: colors, size: 10, opacity: 0.85, line: { width: 0 } },
+    text: hover,
+    hovertemplate: "%{text}<extra></extra>"
+  };
+  const line = {
+    x: bestX, y: best,
+    mode: "lines",
+    type: "scatter",
+    name: "running best",
+    line: { color: "#1976d2", width: 2.5, shape: "hv" },
+    connectgaps: false,
+    hoverinfo: "skip"
+  };
+  const yRange = autoYRange(allRecords);
+  const layout = {
+    margin: { t: 16, r: 20, b: 44, l: 56 },
+    xaxis: { title: "iteration (cumulative across runs)", gridcolor: "#eee" },
+    yaxis: {
+      title: "validation accuracy",
+      gridcolor: "#eee",
+      ...(yRange ? { range: yRange, autorange: false } : {})
+    },
+    plot_bgcolor: "#fff", paper_bgcolor: "#fff",
+    showlegend: false,
+    hovermode: "closest",
+    shapes
+  };
+  Plotly.newPlot("chart", [line, dots], layout, { displayModeBar: false, responsive: true });
+
+  document.getElementById("chart").on("plotly_click", ev => {
+    const pt = ev.points[0];
+    if (!pt || pt.curveNumber !== 1) return;
+    renderDetail(allRecords[pt.pointIndex]);
+  });
+}
+
+function renderHeaderCombined(allRecords, runs) {
+  const meta = document.getElementById("meta");
+  const totalCost = allRecords.reduce((a, r) => a + (r.cost_usd || 0), 0);
+  const bestScore = allRecords.reduce(
+    (b, r) => (typeof r.score === "number" && r.score > b) ? r.score : b,
+    -Infinity
+  );
+  const bestStr = Number.isFinite(bestScore) ? bestScore.toFixed(4) : "n/a";
+  meta.innerHTML = `
+    <span><a href="?">← back to picker</a></span>
+    <span>combined view</span>
+    <span>runs: ${runs.length}</span>
+    <span>total iterations: ${allRecords.length}</span>
+    <span>best across all: <strong>${bestStr}</strong></span>
+    <span>total cost: $${totalCost.toFixed(4)}</span>
+  `;
+}
+
+async function loadCombined() {
+  const files = await discoverTraces();
+  if (!files.length) {
+    document.querySelector("main").innerHTML =
+      `<div class="err">No trace files found in <code>traces/</code>.</div>`;
+    return;
+  }
+  // Sort chronologically (oldest → newest) for a left-to-right timeline.
+  const ordered = [...files].sort();
+
+  const allRecords = [];
+  const runs = [];
+  for (let i = 0; i < ordered.length; i++) {
+    const filename = ordered[i];
+    const records = await loadTrace(`traces/${filename}`);
+    if (!records.length) continue;
+    const label = shortRunLabel(filename, i);
+    const startIdx = allRecords.length;
+    for (const r of records) {
+      r._run_label = label;
+      r._run_file = filename;
+      allRecords.push(r);
+    }
+    runs.push({ label, file: filename, startIdx, endIdx: allRecords.length - 1 });
+  }
+  if (!allRecords.length) {
+    document.querySelector("main").innerHTML =
+      `<div class="err">All trace files were empty.</div>`;
+    return;
+  }
+  renderHeaderCombined(allRecords, runs);
+  renderChartCombined(allRecords, runs);
+}
+
+(async () => {
+  if (getParam("combined") === "1") {
+    try {
+      await loadCombined();
+    } catch (e) {
+      document.querySelector("main").innerHTML =
+        `<div class="err">Failed to build combined view: ${escapeHtml(e.message)}</div>`;
+      document.getElementById("meta").textContent = "error";
+    }
+    return;
+  }
+
+  let tracePath = getParam("trace");
+
+  if (!tracePath) {
+    try {
+      const files = await discoverTraces();
+      if (files.length === 1) {
+        // Auto-redirect when there's exactly one trace.
+        window.location.replace(`?trace=traces/${encodeURIComponent(files[0])}`);
+        return;
+      }
+      renderTracePicker(files);
+    } catch (e) {
+      document.querySelector("main").innerHTML =
+        `<div class="err">Could not list <code>traces/</code>: ${escapeHtml(e.message)}<br>
+        Tip: serve this directory with <code>python -m http.server --bind 127.0.0.1</code>, then open <code>http://localhost:8000/</code>.</div>`;
+      document.getElementById("meta").textContent = "error";
+    }
+    return;
+  }
+
   try {
     const records = await loadTrace(tracePath);
     renderHeader(records, tracePath);
@@ -298,7 +526,7 @@ function renderDetail(r) {
   } catch (e) {
     document.querySelector("main").innerHTML =
       `<div class="err">Failed to load trace: ${escapeHtml(e.message)}<br>
-      Tip: serve this directory with <code>python -m http.server</code> so <code>fetch()</code> can read the JSONL.</div>`;
+      Tip: serve this directory with <code>python -m http.server --bind 127.0.0.1</code> so <code>fetch()</code> can read the JSONL.</div>`;
     document.getElementById("meta").textContent = "error";
   }
 })();
