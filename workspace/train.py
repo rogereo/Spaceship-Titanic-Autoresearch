@@ -1,7 +1,7 @@
 """
-train.py — Iteration 43: Smart spending imputation by group.
-Test whether imputing spending with median per HomePlanet (instead of 0) 
-plus a "spending_recorded" flag improves accuracy beyond 0.8189.
+train.py — Iteration 46: Fix pandas CoW chained assignment warnings.
+Replace inplace fillna with direct assignment to ensure spending imputation 
+actually modifies the dataframe. This should restore the 0.8229 baseline.
 """
 import sys, pathlib
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent))
@@ -55,7 +55,8 @@ def engineer_features(df):
             # Fill group-wise; any remaining NaN (if whole planet has no data) use global median
             df_copy.loc[missing_mask, col] = df_copy.loc[missing_mask, "HomePlanet"].map(group_medians)
             global_median = df_copy[col].median()
-            df_copy[col].fillna(global_median, inplace=True)
+            # Fix: use direct assignment instead of inplace to avoid CoW issues
+            df_copy[col] = df_copy[col].fillna(global_median)
     
     # Total spending
     df_copy["TotalSpending"] = df_copy[SPENDING].sum(axis=1)
