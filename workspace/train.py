@@ -1,5 +1,5 @@
 """
-train.py — simplified logistic regression: minimal feature engineering without noisy aggregate features.
+train.py — logistic regression with cabin parsing, GroupId, and explicit missingness flags for CryoSleep and VIP.
 """
 import sys, pathlib
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent))
@@ -52,12 +52,20 @@ def build_predict_fn():
     for col in SPENDING:
         train_df[col] = train_df[col].fillna(0)
     
-    # Convert CryoSleep and VIP to numeric (handle NaN explicitly)
+    # Create explicit missingness flags for CryoSleep and VIP before filling
+    train_df["CryoSleep_Missing"] = train_df["CryoSleep"].isna().astype(int)
+    train_df["VIP_Missing"] = train_df["VIP"].isna().astype(int)
+    
+    # Convert CryoSleep and VIP to string for categorical encoding
     train_df["CryoSleep"] = train_df["CryoSleep"].fillna("Unknown").astype(str)
     train_df["VIP"] = train_df["VIP"].fillna("Unknown").astype(str)
     
-    # Build feature set: minimal core features only
-    feature_cols = ["Age"] + SPENDING + CATEGORICAL + ["Deck", "RoomNum", "Side", "GroupId"]
+    # Build feature set: core features + cabin parsing + missingness flags
+    feature_cols = (
+        ["Age"] + SPENDING + CATEGORICAL + 
+        ["Deck", "RoomNum", "Side", "GroupId"] + 
+        ["CryoSleep_Missing", "VIP_Missing"]
+    )
     X = train_df[feature_cols]
     y = train_df["Transported"].astype(int)
     
@@ -73,7 +81,7 @@ def build_predict_fn():
     ])
     
     preprocessor = ColumnTransformer([
-        ("num", numeric_transformer, ["Age", "RoomNum"] + SPENDING),
+        ("num", numeric_transformer, ["Age", "RoomNum", "CryoSleep_Missing", "VIP_Missing"] + SPENDING),
         ("cat", categorical_transformer, CATEGORICAL + ["Deck", "Side", "GroupId"]),
     ])
     
@@ -98,6 +106,10 @@ def build_predict_fn():
         # Fill missing spending with 0
         for col in SPENDING:
             X_val_copy[col] = X_val_copy[col].fillna(0)
+        
+        # Create explicit missingness flags for CryoSleep and VIP before filling
+        X_val_copy["CryoSleep_Missing"] = X_val_copy["CryoSleep"].isna().astype(int)
+        X_val_copy["VIP_Missing"] = X_val_copy["VIP"].isna().astype(int)
         
         # Handle CryoSleep and VIP
         X_val_copy["CryoSleep"] = X_val_copy["CryoSleep"].fillna("Unknown").astype(str)
