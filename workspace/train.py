@@ -1,6 +1,6 @@
 """
 train.py — XGBoost with cabin parsing, GroupId, and explicit missingness flags.
-Testing whether non-linear model can improve beyond 0.7907 logistic regression plateau.
+Iteration 19: Testing max_depth=6 to assess if current trees underfit.
 """
 import sys, pathlib
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent))
@@ -88,7 +88,7 @@ def build_predict_fn():
     
     pipe = Pipeline([
         ("preprocessor", preprocessor),
-        ("clf", xgb.XGBClassifier(n_estimators=100, max_depth=5, learning_rate=0.1, random_state=42, verbosity=0)),
+        ("clf", xgb.XGBClassifier(n_estimators=100, max_depth=6, learning_rate=0.1, random_state=42, verbosity=0)),
     ])
     
     pipe.fit(X, y)
