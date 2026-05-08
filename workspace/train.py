@@ -1,7 +1,7 @@
 """
 train.py — XGBoost with cabin parsing, GroupId, and cryo-sleep/spending interaction.
-Iteration 32: Add CryoSleep_NoSpending interaction feature to test whether the coupling
-between cryo-sleep status and zero spending is predictive.
+Iteration 33: Add feature importance diagnostics to understand which engineered features
+drive predictions. This will guide whether to simplify or continue engineering.
 """
 import sys, pathlib
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent))
@@ -120,6 +120,26 @@ def build_predict_fn():
     ])
     
     pipe.fit(X, y)
+    
+    # Print feature importance diagnostics
+    xgb_model = pipe.named_steps["clf"]
+    feature_names = (
+        numeric_feature_cols + 
+        list(pipe.named_steps["preprocessor"].named_transformers_["cat"].named_steps["onehot"].get_feature_names_out(categorical_feature_cols))
+    )
+    importances = xgb_model.feature_importances_
+    importance_df = pd.DataFrame({
+        "feature": feature_names,
+        "importance": importances
+    }).sort_values("importance", ascending=False)
+    
+    print("=== Top 15 Feature Importances ===", file=sys.stderr)
+    print(importance_df.head(15).to_string(index=False), file=sys.stderr)
+    
+    # Print correlations of key engineered features with target
+    print("\n=== Correlation of Key Features with Target ===", file=sys.stderr)
+    corr_df = train_df[["Age", "TotalSpending", "CryoSleep_NoSpending", "CryoSleep_Missing", "VIP_Missing", "RoomNum", "Transported"]].corr()["Transported"].sort_values(ascending=False)
+    print(corr_df.to_string(), file=sys.stderr)
     
     def predict(X_val):
         # Parse Cabin in validation set
