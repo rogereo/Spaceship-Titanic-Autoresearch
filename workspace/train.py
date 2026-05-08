@@ -1,7 +1,7 @@
 """
-train.py — Iteration 123: Revert to exact iter 80 baseline.
-Iter 122 regressed by removing PassengerId and GroupId from categorical_feature_cols.
-These sparse one-hot features carry signal; keep them.
+train.py — Iteration 125: Exploratory data analysis before feature engineering.
+Revert to iter 80/123 baseline (0.8235) and add inline diagnostics to understand
+data structure and feature importance.
 """
 import sys, pathlib
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent))
@@ -87,8 +87,17 @@ def add_group_features(df):
 def build_predict_fn():
     train_df, _ = prepare.load_split()
     
-    # Parse Cabin into Deck, RoomNum, Side
+    # Exploratory analysis (printed to STDERR, will not affect stdout output)
+    print("\n=== DATA EXPLORATION ===", file=sys.stderr)
+    print(f"Train shape: {train_df.shape}", file=sys.stderr)
+    print(f"\nTransported distribution:\n{train_df['Transported'].value_counts(dropna=False)}", file=sys.stderr)
+    print(f"\nCabin nulls: {train_df['Cabin'].isna().sum()}", file=sys.stderr)
     cabin_data = train_df["Cabin"].apply(parse_cabin)
+    decks = [x[0] for x in cabin_data]
+    deck_counts = pd.Series(decks).value_counts(dropna=False)
+    print(f"\nDeck distribution:\n{deck_counts}", file=sys.stderr)
+    
+    # Parse Cabin into Deck, RoomNum, Side
     train_df["Deck"] = cabin_data.apply(lambda x: x[0])
     train_df["RoomNum"] = cabin_data.apply(lambda x: x[1])
     train_df["Side"] = cabin_data.apply(lambda x: x[2])
@@ -98,6 +107,14 @@ def build_predict_fn():
     
     # Add group-level features
     train_df = add_group_features(train_df)
+    
+    # Exploration: transport rate by deck
+    deck_transport = train_df.groupby("Deck")["Transported"].agg(["sum", "count", "mean"])
+    print(f"\nTransport rate by Deck:\n{deck_transport}", file=sys.stderr)
+    
+    # Exploration: group size vs transport
+    group_stats = train_df.groupby("GroupId").agg({"Transported": ["sum", "count", "mean"], "GroupSize": "first"})
+    print(f"\nGroup-level stats (first 10):\n{group_stats.head(10)}", file=sys.stderr)
     
     # Create explicit missingness flags for CryoSleep and VIP only
     train_df["CryoSleep_Missing"] = train_df["CryoSleep"].isna().astype(int)
