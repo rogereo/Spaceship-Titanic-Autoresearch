@@ -1,6 +1,7 @@
 """
-train.py — Iteration 120: Revert to exact iter 80 baseline.
-Remove HasZeroSpending feature added in iter 119 that caused regression to 0.8125.
+train.py — Iteration 123: Revert to exact iter 80 baseline.
+Iter 122 regressed by removing PassengerId and GroupId from categorical_feature_cols.
+These sparse one-hot features carry signal; keep them.
 """
 import sys, pathlib
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent))
