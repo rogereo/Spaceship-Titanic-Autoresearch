@@ -1,39 +1,23 @@
 # Spaceship Titanic AutoResearch
 
-A minimal Karpathy-style autoresearch loop that lets Claude Haiku 4.5 iteratively
-improve a sklearn training script for the
+![Combined trace viewer showing 24 runs and 154 iterations climbing to 0.8235 validation accuracy](docs/trace-viewer.png)
+
+An autoresearch loop that lets Claude Haiku 4.5 iteratively improve a sklearn
+training script for the
 [Spaceship Titanic](https://www.kaggle.com/competitions/spaceship-titanic)
-Kaggle problem. Every iteration is logged as JSONL; an interactive HTML viewer
-lets a human inspect the trace afterwards.
+Kaggle problem. Each turn, the agent reads its current `train.py`, the
+research brief, recent iteration history, and proposes one concrete change.
+The harness writes the new code, commits it, runs the script with a 60-second
+timeout, ratchets on success and reverts on failure, and appends a JSONL
+record. A single-file HTML viewer reads those JSONL traces and lets you click
+through to inspect any iteration.
 
-## Architectural contract
+The pattern is from Karpathy's autoresearch idea (see
+[this tutorial](https://www.datacamp.com/tutorial/guide-to-autoresearch)).
+The companion blog post is at <TODO: blog post URL>.
 
-The system has three parts and they stay decoupled:
-
-1. **The harness** ([`autoresearch_loop.py`](./autoresearch_loop.py)) — orchestrates the loop. Reads files, calls the Anthropic API, executes code, ratchets on success, reverts on failure, writes the trace.
-2. **The problem definition** — [`prepare.py`](./prepare.py) (immutable evaluator), [`workspace/train.py`](./workspace/train.py) (the agent's sandbox, rewritten each turn), and [`program.md`](./program.md) (the research brief).
-3. **The view** ([`index.html`](./index.html)) — single-file Plotly chart with click-to-expand iteration details, reads the JSONL trace.
-
-The harness reads JSONL. The viewer reads JSONL. No shared imports.
-
-## Layout
-
-```
-spaceship-titanic-autoresearch/
-├── README.md
-├── requirements.txt
-├── .env.example
-├── .gitignore
-├── prepare.py                  # immutable evaluator
-├── program.md                  # research brief
-├── autoresearch_loop.py        # the harness
-├── index.html                  # the trace viewer
-├── data/                       # gitignored; user places train.csv here
-├── workspace/
-│   ├── train.py                # agent's sandbox (starts as baseline)
-│   └── notes.md                # gitignored; agent appends one line per turn
-└── traces/                     # gitignored; one JSONL per run
-```
+Across 24 sessions and 154 iterations I spent $2.34 and reached 0.8235
+validation accuracy. The 24 trace files are committed in `traces/`.
 
 ## Setup
 
@@ -47,90 +31,105 @@ spaceship-titanic-autoresearch/
    ```
    pip install -r requirements.txt
    ```
-4. Copy `.env.example` to `.env` and put your Anthropic API key in it. Set a hard
-   spending cap on the key in the Anthropic console (recommended: $10).
+4. Copy `.env.example` to `.env` and add your Anthropic API key. Set a hard
+   spending cap on the key in the Anthropic console.
 5. Download `train.csv` from the
    [Kaggle competition](https://www.kaggle.com/competitions/spaceship-titanic/data)
    and place it at `data/train.csv`.
-6. Make sure your working tree is clean and committed before running the harness
-   — it creates a new branch and commits per iteration.
 
-## Run
+## Run the loop
 
-```powershell
-python workspace\train.py                          # smoke test the baseline (~0.78)
-python autoresearch_loop.py --max-iterations 1     # smoke test the full loop
-python autoresearch_loop.py                        # real run (15 iters, capped at $10)
+```
+python autoresearch_loop.py
 ```
 
-Each run creates a fresh branch `autoresearch/run-<timestamp>` and writes one
-JSONL line per iteration to `traces/run_<timestamp>.jsonl`. Reverted iterations
-are hard-reset out of git history; the kept iterations form a clean staircase.
+Each run creates a fresh branch `autoresearch/run-<timestamp>`, writes one
+JSONL line per iteration to `traces/run_<timestamp>.jsonl`, and stops at 15
+iterations, $10 cost, or 5 consecutive iterations without improvement.
+Reverted iterations are hard-reset out of git history; the kept ones form a
+clean staircase.
 
-## View the trace
+To start a run from the original baseline rather than the current
+`workspace/train.py`:
 
-```powershell
-python -m http.server --bind 127.0.0.1     # serve the repo so fetch() can read the JSONL
+```
+copy workspace\train.py.starter workspace\train.py
 ```
 
-Then open `http://localhost:8000/`.
+## View a trace
 
-The viewer auto-discovers trace files in `traces/`. With one trace it loads it
-directly; with several it shows a picker. To deep-link a specific trace use
-`http://localhost:8000/?trace=traces/run_<timestamp>.jsonl`.
+Serve the repo:
 
-> The `--bind 127.0.0.1` flag matters: without it, `http.server` advertises
-> `http://[::]:8000/`, which Chrome refuses with `ERR_ADDRESS_INVALID`.
+```
+python -m http.server --bind 127.0.0.1
+```
 
-The chart shows attempt scores as colored dots (green=kept, grey=reverted,
-red=crashed, orange=parse_failed) and the running best as a staircase line.
-Click any dot to see that iteration's reflection, observations, hypothesis,
-plan, code, and run output.
+Then open <http://localhost:8000/>. The viewer auto-discovers files in
+`traces/`. With many traces it shows a picker; you can also link to a
+specific run, e.g.
+
+```
+http://localhost:8000/?trace=traces/run_20260508_230657.jsonl
+```
+
+or to the combined view across all runs:
+
+```
+http://localhost:8000/?combined=1
+```
+
+The chart plots validation accuracy per iteration. Green dots are kept,
+grey reverted, red crashed, orange parse-failed. The blue staircase is the
+running best. Click any dot to expand the full iteration record:
+reflection, observations, hypothesis, plan, code, stdout, stderr, and notes
+appended.
+
+## Generate a Kaggle submission
+
+Place the test data alongside `train.csv`:
+
+- `data/test.csv` — the hidden test set.
+- `data/sample_submission.csv` — the expected format.
+
+Then:
+
+```
+python submit.py
+```
+
+It reproduces the held-out validation score for sanity, retrains on the full
+labelled set, predicts on `test.csv`, validates the row set against
+`sample_submission.csv`, and writes `submission.csv` at the repo root. Upload
+that file at <https://www.kaggle.com/competitions/spaceship-titanic/submit>.
+
+## How it's wired
+
+Three parts, kept decoupled:
+
+- **The harness** ([`autoresearch_loop.py`](./autoresearch_loop.py)) —
+  orchestrates the loop. Reads files, calls the API, executes code,
+  ratchets, writes the trace.
+- **The problem definition** —
+  [`prepare.py`](./prepare.py) is the immutable evaluator (fixed 80/20
+  split, seed 42).
+  [`workspace/train.py`](./workspace/train.py) is the agent's sandbox,
+  rewritten each turn — the version committed here is the one that scored
+  0.8235.
+  [`program.md`](./program.md) is the human-authored research brief the
+  agent reads every turn.
+- **The output view** — [`index.html`](./index.html) reads a JSONL trace
+  via `fetch()` and renders the chart and detail panel. Each `.jsonl` file
+  in [`traces/`](./traces/) is one full session.
+
+The harness reads JSONL. The viewer reads JSONL. They share no imports.
 
 ## Hard rules (enforced by the harness)
 
-- `train.py` must call `prepare.evaluate(predict_fn)` exactly once and print
-  `VAL_ACCURACY: 0.XXXX` as the last line of stdout.
+- `train.py` must call `prepare.evaluate(predict_fn)` exactly once and
+  print `VAL_ACCURACY: 0.XXXX` as the last line of stdout.
 - 60-second per-iteration timeout; longer runs are killed and reverted.
 - Score regressions are reverted via `git reset --hard HEAD~1`.
 - $10 total cost cap per run.
-- Stops after 5 iterations with no improvement.
-
-## Stop conditions
-
-The loop ends when any of these is hit:
-- `--max-iterations` reached (default 15)
-- 5 consecutive iterations without improvement
-- $10 total cost cap
-
-## Generating a Kaggle submission
-
-Once a run produces a `workspace/train.py` you're happy with, you can generate
-a leaderboard submission with the one-off script
-[`submit.py`](./submit.py):
-
-1. Place these two files (download from the
-   [Kaggle data tab](https://www.kaggle.com/competitions/spaceship-titanic/data))
-   alongside your existing `train.csv`:
-   - `data/test.csv` — the hidden test set (~4,277 rows, no `Transported` column).
-   - `data/sample_submission.csv` — the expected format Kaggle returns.
-2. Make sure you're on the branch whose `workspace/train.py` you want to submit
-   (typically the latest run branch with the highest score).
-3. Run:
-   ```powershell
-   python submit.py
-   ```
-   The script imports `workspace/train.py`, reproduces the held-out 80/20 score
-   for sanity, retrains on the full labelled set, predicts on `test.csv`,
-   validates the row set against `sample_submission.csv`, and writes
-   `submission.csv` at the repo root.
-4. Upload `submission.csv` at
-   <https://www.kaggle.com/competitions/spaceship-titanic/submit>.
-
-`submit.py` is intentionally outside the agent's contract — it doesn't modify
-`train.py`, `prepare.py`, or `program.md`, and it isn't run by the harness.
-
-## Blog post
-
-This codebase is a companion to a forthcoming blog post on autoresearch. (Link
-to be added.)
+- The agent may only use `pandas`, `numpy`, `scikit-learn`, `xgboost`,
+  `lightgbm`. No internet, no new dependencies.
+- The agent may not modify `prepare.py`.
