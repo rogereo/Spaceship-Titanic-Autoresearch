@@ -103,6 +103,33 @@ The loop ends when any of these is hit:
 - 5 consecutive iterations without improvement
 - $10 total cost cap
 
+## Generating a Kaggle submission
+
+Once a run produces a `workspace/train.py` you're happy with, you can generate
+a leaderboard submission with the one-off script
+[`submit.py`](./submit.py):
+
+1. Place these two files (download from the
+   [Kaggle data tab](https://www.kaggle.com/competitions/spaceship-titanic/data))
+   alongside your existing `train.csv`:
+   - `data/test.csv` — the hidden test set (~4,277 rows, no `Transported` column).
+   - `data/sample_submission.csv` — the expected format Kaggle returns.
+2. Make sure you're on the branch whose `workspace/train.py` you want to submit
+   (typically the latest run branch with the highest score).
+3. Run:
+   ```powershell
+   python submit.py
+   ```
+   The script imports `workspace/train.py`, reproduces the held-out 80/20 score
+   for sanity, retrains on the full labelled set, predicts on `test.csv`,
+   validates the row set against `sample_submission.csv`, and writes
+   `submission.csv` at the repo root.
+4. Upload `submission.csv` at
+   <https://www.kaggle.com/competitions/spaceship-titanic/submit>.
+
+`submit.py` is intentionally outside the agent's contract — it doesn't modify
+`train.py`, `prepare.py`, or `program.md`, and it isn't run by the harness.
+
 ## Blog post
 
 This codebase is a companion to a forthcoming blog post on autoresearch. (Link
