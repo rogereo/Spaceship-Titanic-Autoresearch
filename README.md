@@ -14,7 +14,7 @@ through to inspect any iteration.
 
 The pattern is from Karpathy's autoresearch idea (see
 [this tutorial](https://www.datacamp.com/tutorial/guide-to-autoresearch)).
-The companion blog post is at <TODO: blog post URL>.
+The companion blog post is at [One Agent, 154 Experiments](https://rogereo.github.io/2026/05/16/autoresearch-tracer/) 
 
 Across 24 sessions and 154 iterations I spent $2.34 and reached 0.8235
 validation accuracy. The 24 trace files are committed in `traces/`.
