@@ -323,7 +323,7 @@ function renderTracePicker(files) {
   document.getElementById("meta").textContent = `${files.length} trace file(s) available`;
   const main = document.querySelector("main");
   if (!files.length) {
-    main.innerHTML = `<div class="err">No trace files found in <code>traces/</code>. Run <code>python autoresearch_loop.py</code> first.</div>`;
+    main.innerHTML = `<div class="err">No trace files found in <code>traces/</code>. Run <code>python orchestrator.py</code> first.</div>`;
     return;
   }
   const items = files.map(f => `<li><a href="?trace=traces/${encodeURIComponent(f)}">${escapeHtml(f)}</a></li>`).join("");

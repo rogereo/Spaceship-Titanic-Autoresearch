@@ -40,7 +40,7 @@ validation accuracy. The 24 trace files are committed in `traces/`.
 ## Run the loop
 
 ```
-python autoresearch_loop.py
+python orchestrator.py
 ```
 
 Each run creates a fresh branch `autoresearch/run-<timestamp>`, writes one
@@ -106,7 +106,7 @@ that file at <https://www.kaggle.com/competitions/spaceship-titanic/submit>.
 
 Three parts, kept decoupled:
 
-- **The harness** ([`autoresearch_loop.py`](./autoresearch_loop.py)) —
+- **The orchestrator** ([`orchestrator.py`](./orchestrator.py)) —
   orchestrates the loop. Reads files, calls the API, executes code,
   ratchets, writes the trace.
 - **The problem definition** —

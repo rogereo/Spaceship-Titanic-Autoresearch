@@ -1,9 +1,4 @@
-"""
-prepare.py — IMMUTABLE evaluator. Do not modify during a run.
-SHA pinned at top. The agent must call evaluate() and never redefine the split.
-"""
-EVALUATOR_VERSION = "v1.0.0-fixed-split-seed-42"
-
+"""Held-out evaluator. The agent must call evaluate() and never redefine the split."""
 import pandas as pd
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import accuracy_score

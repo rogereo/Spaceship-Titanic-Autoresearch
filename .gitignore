@@ -1,48 +1,30 @@
 # Secrets
 .env
-.env.local
-.env.*.local
 
-# Data — user provides this locally
-data/*.csv
-
-# Kaggle submission artifacts (if ever generated)
-submission.csv
-*.submission.csv
-
-# Runtime artifacts
-workspace/notes.md
-workspace/__pycache__/
-traces/*.jsonl
-best.json
-
-# Python
-__pycache__/
-*.pyc
-*.pyo
-.pytest_cache/
-.mypy_cache/
-.ruff_cache/
-.coverage
-htmlcov/
-*.egg-info/
-build/
-dist/
+# Virtual environments
 .venv/
 venv/
 env/
 
-# Jupyter
-.ipynb_checkpoints/
+# Python
+__pycache__/
+*.pyc
+.pytest_cache/
 
 # Editor / IDE
 .vscode/
 .idea/
-*.swp
-*.swo
-*~
 
 # OS
 .DS_Store
 Thumbs.db
-desktop.ini
+
+# Kaggle data — not ours to redistribute
+data/*.csv
+
+# Runtime artifacts
+best.json
+notes.md
+workspace/notes.md
+workspace/best.json
+submission.csv

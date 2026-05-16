@@ -1,23 +1,4 @@
-"""
-submit.py — Generate a Kaggle submission from the agent's best train.py.
-
-One-off script. NOT part of the autoresearch loop and lives outside the
-agent's contract.
-
-Pipeline:
-  1. Import workspace/train.py and reproduce the agent's 80/20 held-out
-     validation score as a sanity check.
-  2. Retrain the same model on the FULL labelled set (all rows of
-     data/train.csv), so the submitted model has seen every available
-     example.
-  3. Predict on data/test.csv, validate the format against
-     data/sample_submission.csv, and write submission.csv.
-
-Run after placing test.csv and sample_submission.csv at data/:
-    python submit.py
-Then upload submission.csv at
-https://www.kaggle.com/competitions/spaceship-titanic/submit
-"""
+"""One-off Kaggle submission generator. Imports workspace/train.py, retrains on the full set, predicts on test.csv."""
 import sys
 import pathlib
 import pandas as pd

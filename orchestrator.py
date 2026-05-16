@@ -1,11 +1,4 @@
-"""
-autoresearch_loop.py — the harness.
-
-Reads program.md + workspace/train.py + workspace/notes.md + recent trace,
-calls Claude Haiku 4.5, parses the XML response, writes the new train.py,
-commits, runs it with a timeout, ratchets on success / reverts on failure,
-appends one JSONL record per iteration to traces/run_<timestamp>.jsonl.
-"""
+"""Harness: calls Claude, parses the response, runs train.py, commits or reverts, logs to JSONL."""
 import argparse
 import json
 import os
@@ -205,12 +198,10 @@ def execute_train():
         stdout = res.stdout
         stderr = res.stderr
         returncode = res.returncode
-        timed_out = False
     except subprocess.TimeoutExpired as e:
         stdout = e.stdout or ""
         stderr = (e.stderr or "") + f"\n[TIMEOUT after {TIMEOUT_SECONDS}s]"
         returncode = -1
-        timed_out = True
     duration = time.time() - t0
 
     score = None
@@ -227,7 +218,6 @@ def execute_train():
         "returncode": returncode,
         "score": score,
         "duration_seconds": round(duration, 2),
-        "timed_out": timed_out,
     }
 
 
@@ -332,7 +322,7 @@ def now_iso():
     return datetime.now().isoformat(timespec="seconds")
 
 
-def baseline_iteration(trace_path, run_meta):
+def baseline_iteration(trace_path, base_commit):
     """Run the baseline once, record it as iteration 0."""
     print("→ running baseline...")
     result = execute_train()
@@ -361,7 +351,7 @@ def baseline_iteration(trace_path, run_meta):
         "previous_best": None,
         "kept": True,
         "status": "kept",
-        "commit_hash": run_meta["base_commit"],
+        "commit_hash": base_commit,
         "input_tokens": 0,
         "output_tokens": 0,
         "cost_usd": 0.0,
@@ -393,13 +383,11 @@ def run_loop(max_iterations):
     trace_path = TRACES / f"run_{timestamp}.jsonl"
     print(f"→ trace: {trace_path.name}")
 
-    run_meta = {"branch": branch, "base_commit": base_commit, "model": MODEL}
-
     NOTES_MD.parent.mkdir(parents=True, exist_ok=True)
     if not NOTES_MD.exists():
         NOTES_MD.write_text("", encoding="utf-8")
 
-    best_score, last_run = baseline_iteration(trace_path, run_meta)
+    best_score, last_run = baseline_iteration(trace_path, base_commit)
 
     client = anthropic.Anthropic()
     total_cost = 0.0
