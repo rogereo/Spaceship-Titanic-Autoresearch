@@ -1,6 +1,6 @@
 # Spaceship Titanic AutoResearch
 
-![Combined trace viewer showing 24 runs and 154 iterations climbing to 0.8235 validation accuracy](docs/trace-viewer.png)
+![Combined trace viewer showing 24 runs and 154 iterations climbing to 0.8235 validation accuracy](docs/tracer-ui.png)
 
 An autoresearch loop that lets Claude Haiku 4.5 iteratively improve a sklearn
 training script for the

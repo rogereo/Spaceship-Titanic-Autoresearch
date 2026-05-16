@@ -25,32 +25,50 @@
     background: var(--bg);
   }
   header {
-    padding: 20px 24px 12px;
+    padding: 24px 32px 14px;
     border-bottom: 1px solid var(--line);
   }
-  header h1 { margin: 0 0 6px 0; font-size: 20px; font-weight: 600; }
-  header .meta { color: var(--muted); font-size: 13px; }
-  header .meta span { margin-right: 14px; }
-  main { padding: 12px 24px 32px; max-width: 1200px; margin: 0 auto; }
-  #chart { width: 100%; height: 400px; }
+  header h1 { margin: 0 0 8px 0; font-size: 28px; font-weight: 600; letter-spacing: -0.01em; }
+  header .meta { color: var(--muted); font-size: 14px; display: flex; flex-wrap: wrap; gap: 16px; align-items: baseline; }
+  main { padding: 20px 32px 40px; max-width: none; margin: 0; }
+  .split { display: flex; gap: 28px; align-items: flex-start; }
+  .split-chart { flex: 1 1 60%; min-width: 0; }
+  .split-detail { flex: 1 1 40%; min-width: 0; }
+  #chart { width: 100%; height: 760px; }
   #status { padding: 24px; color: var(--muted); }
+  .chart-bottom {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    padding: 8px 2px 0;
+    flex-wrap: wrap;
+  }
   .legend {
     display: flex; gap: 14px; flex-wrap: wrap;
     font-size: 12px; color: var(--muted);
-    padding: 6px 0 12px;
   }
   .legend .swatch {
     display: inline-block; width: 10px; height: 10px;
     border-radius: 50%; margin-right: 4px; vertical-align: middle;
   }
+  .chart-controls {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-size: 12px;
+    color: var(--muted);
+  }
+  .chart-controls input[type="range"] { width: 180px; }
+  .chart-controls .value { font-variant-numeric: tabular-nums; min-width: 48px; text-align: right; }
   .detail {
-    margin-top: 16px;
     border: 1px solid var(--line);
     border-radius: 6px;
-    padding: 16px 20px;
-    max-height: 540px;
+    padding: 20px 24px;
+    height: 800px;
     overflow-y: auto;
     background: var(--card);
+    font-size: 15px;
   }
   .detail.empty { color: var(--muted); font-style: italic; padding: 28px 20px; }
   .detail h2 {
@@ -95,6 +113,14 @@
   .detail details summary { cursor: pointer; font-size: 13px; color: var(--muted); }
   .detail details pre { margin-top: 8px; }
   .err { color: #c62828; padding: 24px; }
+  @media (max-width: 1100px) {
+    .split { flex-direction: column; }
+    .split-chart, .split-detail { flex: 1 1 100%; width: 100%; }
+    .detail { height: auto; max-height: 560px; }
+    #chart { height: 460px; }
+    main { padding: 14px 20px 32px; }
+    header h1 { font-size: 22px; }
+  }
   @media (max-width: 700px) {
     main { padding: 8px 12px 24px; }
     header { padding: 14px 14px 10px; }
@@ -103,19 +129,32 @@
 </head>
 <body>
 <header>
-  <h1>AutoResearch trace</h1>
+  <h1>AutoResearch Tracer</h1>
   <div class="meta" id="meta">loading…</div>
 </header>
 <main>
-  <div id="chart"></div>
-  <div class="legend">
-    <span><span class="swatch" style="background:#2e7d32"></span>kept</span>
-    <span><span class="swatch" style="background:#888"></span>reverted</span>
-    <span><span class="swatch" style="background:#c62828"></span>crashed</span>
-    <span><span class="swatch" style="background:#ef6c00"></span>parse_failed</span>
-    <span><span style="color:#1976d2">━━</span> running best</span>
+  <div class="split">
+    <div class="split-chart">
+      <div id="chart"></div>
+      <div class="chart-bottom">
+        <div class="legend">
+          <span><span class="swatch" style="background:#2e7d32"></span>kept</span>
+          <span><span class="swatch" style="background:#888"></span>reverted</span>
+          <span><span class="swatch" style="background:#c62828"></span>crashed</span>
+          <span><span class="swatch" style="background:#ef6c00"></span>parse_failed</span>
+          <span><span style="color:#1976d2">━━</span> running best</span>
+        </div>
+        <div class="chart-controls">
+          <label for="chart-height-slider">chart height</label>
+          <input type="range" id="chart-height-slider" min="400" max="1100" step="20">
+          <span class="value" id="chart-height-value">760px</span>
+        </div>
+      </div>
+    </div>
+    <div class="split-detail">
+      <div class="detail empty" id="detail">Click a point on the chart to see the iteration details.</div>
+    </div>
   </div>
-  <div class="detail empty" id="detail">Click a point on the chart to see the iteration details.</div>
 </main>
 
 <script>
@@ -126,6 +165,47 @@ const COLORS = {
   parse_failed: "#ef6c00",
   api_error: "#c62828"
 };
+
+const CHART_HEIGHT_KEY = "chartHeight";
+const DEFAULT_CHART_HEIGHT = 760;
+const DEFAULT_MODEL_LABEL = "Claude Haiku 4.5";
+
+function modelLabelFromRecords(records) {
+  if (records && records.length) {
+    for (const r of records) {
+      if (r && r.model) return r.model;
+    }
+  }
+  return DEFAULT_MODEL_LABEL;
+}
+
+function getSavedChartHeight() {
+  const v = parseInt(localStorage.getItem(CHART_HEIGHT_KEY) || "", 10);
+  return Number.isFinite(v) && v >= 200 ? v : DEFAULT_CHART_HEIGHT;
+}
+
+function applySavedChartHeight() {
+  const chartEl = document.getElementById("chart");
+  if (chartEl) chartEl.style.height = getSavedChartHeight() + "px";
+}
+
+function wireChartHeightSlider() {
+  const slider = document.getElementById("chart-height-slider");
+  const valueLabel = document.getElementById("chart-height-value");
+  const chartEl = document.getElementById("chart");
+  if (!slider || !chartEl || slider.dataset.wired) return;
+  slider.dataset.wired = "1";
+  const initial = getSavedChartHeight();
+  slider.value = initial;
+  valueLabel.textContent = initial + "px";
+  slider.addEventListener("input", e => {
+    const h = parseInt(e.target.value, 10);
+    chartEl.style.height = h + "px";
+    valueLabel.textContent = h + "px";
+    localStorage.setItem(CHART_HEIGHT_KEY, String(h));
+    if (window.Plotly) Plotly.Plots.resize(chartEl);
+  });
+}
 
 function escapeHtml(s) {
   return String(s == null ? "" : s)
@@ -198,6 +278,7 @@ function renderHeader(records, tracePath) {
     <span>best: <strong>${bestStr}</strong></span>
     <span>cost: $${totalCost.toFixed(4)}</span>
     <span>started: ${escapeHtml(start)}</span>
+    <span>model: ${escapeHtml(modelLabelFromRecords(records))}</span>
   `;
 }
 
@@ -446,6 +527,7 @@ function renderHeaderCombined(allRecords, runs) {
     <span>total iterations: ${allRecords.length}</span>
     <span>best across all: <strong>${bestStr}</strong></span>
     <span>total cost: $${totalCost.toFixed(4)}</span>
+    <span>model: ${escapeHtml(modelLabelFromRecords(allRecords))}</span>
   `;
 }
 
@@ -480,7 +562,9 @@ async function loadCombined() {
     return;
   }
   renderHeaderCombined(allRecords, runs);
+  applySavedChartHeight();
   renderChartCombined(allRecords, runs);
+  wireChartHeightSlider();
 }
 
 (async () => {
@@ -522,7 +606,9 @@ async function loadCombined() {
       document.getElementById("detail").textContent = "Trace file is empty.";
       return;
     }
+    applySavedChartHeight();
     renderChart(records);
+    wireChartHeightSlider();
   } catch (e) {
     document.querySelector("main").innerHTML =
       `<div class="err">Failed to load trace: ${escapeHtml(e.message)}<br>
